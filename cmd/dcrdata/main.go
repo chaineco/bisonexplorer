@@ -1386,7 +1386,7 @@ func _main(ctx context.Context) error {
 		}
 		log.Infof("Finish checking and syncing coin age tables...")
 	}
-	log.Infof("Start sync btc/ltc tx count")
+	log.Debugf("Start sync btc/ltc tx count")
 	go chainDB.SyncMultichainMetaInfo(btcDisabled, ltcDisabled)
 	// After sync and indexing, must use upsert statement, which checks for
 	// duplicate entries and updates instead of erroring. SyncChainDB should
@@ -2043,7 +2043,7 @@ func _main(ctx context.Context) error {
 			default:
 			}
 			if pgRes.Error != nil {
-				fmt.Println("dcrpg.SyncMutilchainChainDBAsync LTC failed at height", pgRes.Height)
+				log.Errorf("dcrpg.SyncMutilchainChainDBAsync LTC failed at height: %d", pgRes.Height)
 				return pgRes.Error
 			}
 			if ltcPgHeight == int64(ltcHeight) {
@@ -2089,7 +2089,7 @@ func _main(ctx context.Context) error {
 			default:
 			}
 			if pgRes.Error != nil {
-				fmt.Println("dcrpg.SyncMutilchainChainDBAsync BTC failed at height", pgRes.Height)
+				log.Errorf("dcrpg.SyncMutilchainChainDBAsync BTC failed at height: %d", pgRes.Height)
 				return pgRes.Error
 			}
 			if btcPgHeight >= int64(btcHeight) {

@@ -29,6 +29,7 @@ import (
 
 	"github.com/decred/dcrdata/v8/blockdata"
 	"github.com/decred/dcrdata/v8/mempool"
+	"github.com/decred/dcrdata/v8/mutilchain/externalapi"
 	"github.com/decred/dcrdata/v8/pubsub"
 	"github.com/decred/dcrdata/v8/rpcutils"
 	"github.com/decred/dcrdata/v8/stakedb"
@@ -54,7 +55,7 @@ var (
 	xcBotLog      slog.Logger
 	agendasLog    slog.Logger
 	proposalsLog  slog.Logger
-
+	externalLog   slog.Logger
 	// filled after init so setLogLevels works
 	subsystemLoggers map[string]slog.Logger
 )
@@ -235,11 +236,11 @@ func initLogRotators(logPath, debugLogPath string, maxRolls int) {
 	xcBotLog = backendLog.Logger("XBOT")
 	agendasLog = backendLog.Logger("AGDB")
 	proposalsLog = backendLog.Logger("PRDB")
-
+	externalLog = backendLog.Logger("PRDB")
 	all := []slog.Logger{
 		notifyLog, postgresqlLog, stakedbLog, BlockdataLog, clientLog,
 		mempoolLog, expLog, apiLog, log, iapiLog, pubsubLog,
-		xcBotLog, agendasLog, proposalsLog,
+		xcBotLog, agendasLog, proposalsLog, externalLog,
 	}
 	for _, lg := range all {
 		lg.SetLevel(slog.LevelDebug)
@@ -261,23 +262,25 @@ func initLogRotators(logPath, debugLogPath string, maxRolls int) {
 	exchanges.UseLogger(xcBotLog)
 	agendas.UseLogger(agendasLog)
 	politeia.UseLogger(proposalsLog)
+	externalapi.UseLogger(externalLog)
 
 	// Save map to use setLogLevels laters
 	subsystemLoggers = map[string]slog.Logger{
-		"NTFN": notifyLog,
-		"PSQL": postgresqlLog,
-		"SKDB": stakedbLog,
-		"BLKD": BlockdataLog,
-		"RPCC": clientLog,
-		"MEMP": mempoolLog,
-		"EXPR": expLog,
-		"JAPI": apiLog,
-		"IAPI": iapiLog,
-		"DATD": log,
-		"PUBS": pubsubLog,
-		"XBOT": xcBotLog,
-		"AGDB": agendasLog,
-		"PRDB": proposalsLog,
+		"NTFN":   notifyLog,
+		"PSQL":   postgresqlLog,
+		"SKDB":   stakedbLog,
+		"BLKD":   BlockdataLog,
+		"RPCC":   clientLog,
+		"MEMP":   mempoolLog,
+		"EXPR":   expLog,
+		"JAPI":   apiLog,
+		"IAPI":   iapiLog,
+		"DATD":   log,
+		"PUBS":   pubsubLog,
+		"XBOT":   xcBotLog,
+		"AGDB":   agendasLog,
+		"PRDB":   proposalsLog,
+		"EXTAPI": externalLog,
 	}
 }
 

@@ -1946,7 +1946,7 @@ func (pgb *ChainDB) SyncAndGet24hMetricsInfo(bestBlockHeight int64, chainType st
 	}
 
 	if numRow > 0 {
-		log.Infof("Deleted %d rows on 24hblocks table", numRow)
+		log.Debugf("SyncAndGet24hMetricsInfo: Deleted %d rows on 24hblocks table", numRow)
 	}
 
 	pgb.Sync24hMetricsByChainType(chainType)

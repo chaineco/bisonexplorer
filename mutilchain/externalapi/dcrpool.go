@@ -1,7 +1,6 @@
 package externalapi
 
 import (
-	"log"
 	"net/http"
 	"sort"
 
@@ -44,7 +43,7 @@ func GetPoolData(poolURL, poolType string) ([]*dbtypes.PoolDataItem, error) {
 }
 
 func GetLastBlocksPool() ([]*dbtypes.PoolDataItem, error) {
-	log.Printf("Start handler get pool info API")
+	log.Debugf("Start handler get pool info API")
 	// get 5 pool blocks from threepool
 	threepoolRes, err := GetPoolData(threePoolURL, THREEPOOL)
 	if err != nil {
@@ -66,6 +65,6 @@ func GetLastBlocksPool() ([]*dbtypes.PoolDataItem, error) {
 	if len(threepoolRes) < 5 {
 		return threepoolRes, nil
 	}
-	log.Printf("Finished handler get pool info API")
+	log.Debugf("Finished handler get pool info API")
 	return threepoolRes[:5], nil
 }

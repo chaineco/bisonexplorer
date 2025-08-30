@@ -690,7 +690,7 @@ func loadConfig() (*config, error) {
 
 	// Special show command to list supported subsystems and exit.
 	if cfg.DebugLevel == "show" {
-		fmt.Println("Supported subsystems", supportedSubsystems())
+		log.Errorf("Supported subsystems: %s", strings.Join(supportedSubsystems(), "\n"))
 		os.Exit(0)
 	}
 

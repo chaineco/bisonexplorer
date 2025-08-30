@@ -2,7 +2,6 @@ package externalapi
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"time"
@@ -84,7 +83,7 @@ func GetBitapsAddressTxsData(chainType, address string, limit, offset int64) (*B
 }
 
 func GetBitapsAddressInfoAPI(address, chainType string, limit, offset int64, txnType dbtypes.AddrTxnViewType) (*APIAddressInfo, error) {
-	log.Printf("Start get address data from Bitaps API for %s", chainType)
+	log.Debugf("Start get address data from Bitaps API for %s", chainType)
 	//Get address summary data
 	summaryData, err := GetBitapsSummaryData(chainType, address)
 	if err != nil {
@@ -141,6 +140,6 @@ func GetBitapsAddressInfoAPI(address, chainType string, limit, offset int64, txn
 		transactions = append(transactions, &addrTx)
 	}
 	addressInfo.Transactions = transactions
-	log.Printf("Finish get address data from Bitaps API for %s", chainType)
+	log.Debugf("Finish get address data from Bitaps API for %s", chainType)
 	return addressInfo, nil
 }
