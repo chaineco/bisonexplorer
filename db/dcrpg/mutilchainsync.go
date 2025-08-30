@@ -304,7 +304,7 @@ func (pgb *ChainDB) SyncLast20BTCBlocks(nodeHeight int32) error {
 
 	speedReport()
 
-	log.Infof("BTC: Sync last 20 Blocks of BTC finished at height %d. Delta: %d blocks, %d transactions, %d ins, %d outs",
+	log.Debugf("BTC: Sync last 20 Blocks of BTC finished at height %d. Delta: %d blocks, %d transactions, %d ins, %d outs",
 		nodeHeight, int64(nodeHeight)-int64(startHeight)+1, totalTxs, totalVins, totalVouts)
 	pgb.BTC20BlocksSyncing = false
 	return err
@@ -403,7 +403,7 @@ func (pgb *ChainDB) SyncLast20LTCBlocks(nodeHeight int32) error {
 
 	speedReport()
 
-	log.Infof("LTC: Sync last 20 Blocks of LTC finished at height %d. Delta: %d blocks, %d transactions, %d ins, %d outs",
+	log.Debugf("LTC: Sync last 20 Blocks of LTC finished at height %d. Delta: %d blocks, %d transactions, %d ins, %d outs",
 		nodeHeight, int64(nodeHeight)-int64(startHeight)+1, totalTxs, totalVins, totalVouts)
 	pgb.LTC20BlocksSyncing = false
 	return err
@@ -944,7 +944,7 @@ func (pgb *ChainDB) Sync24BlocksAsync() {
 	}
 
 	if numRow > 0 {
-		log.Infof("Deleted %d rows on 24hblocks table", numRow)
+		log.Debugf("Sync24BlocksAsync: Deleted %d rows on 24hblocks table", numRow)
 	}
 	chainList := []string{mutilchain.TYPEDCR}
 	chainList = append(chainList, dbtypes.MutilchainList...)
@@ -959,9 +959,9 @@ func (pgb *ChainDB) Sync24hMetricsByChainType(chain string) {
 		return
 	}
 	if chain == mutilchain.TYPEDCR {
-		log.Infof("Start syncing for 24hblocks info. ChainType: %s", mutilchain.TYPEDCR)
+		log.Debugf("Start syncing for 24hblocks info. ChainType: %s", mutilchain.TYPEDCR)
 		pgb.SyncDecred24hBlocks()
-		log.Infof("Finish syncing for 24hblocks info. ChainType: %s", mutilchain.TYPEDCR)
+		log.Debugf("Finish syncing for 24hblocks info. ChainType: %s", mutilchain.TYPEDCR)
 		return
 	}
 	bbheight, _ := pgb.GetMutilchainBestBlock(chain)
@@ -1093,7 +1093,7 @@ func (pgb *ChainDB) SyncMutilchain24hBlocks(height int64, chainType string) {
 			break
 		}
 
-		log.Infof("%s: Insert to 24h blocks metric: Height: %d, TxNum: %d", chainType, blockData.BlockHeight, blockData.NumTx)
+		log.Debugf("%s: Insert to 24h blocks metric: Height: %d, TxNum: %d", chainType, blockData.BlockHeight, blockData.NumTx)
 
 		//insert to db
 		var id uint64

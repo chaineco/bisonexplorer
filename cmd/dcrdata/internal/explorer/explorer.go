@@ -1040,7 +1040,7 @@ func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btc
 		log.Errorf("Get BTC last 10 block pools failed: ", err)
 	}
 	newBlockData.PoolDataList = last5BlockPools
-	log.Infof("Get last 10 BTC Blocks pool successfully")
+	log.Debugf("Get last 10 BTC Blocks pool successfully")
 	// get multichain stats from blockchair
 	totalAddresses := int64(0)
 	totalOutputs := int64(0)
@@ -1056,7 +1056,7 @@ func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btc
 		volume24h = chainStats.Volume24h
 		nodes = chainStats.Nodes
 		avgTxFees24h = chainStats.AverageTransactionFee24h
-		log.Info("BTC: Get Multichain stats successfully")
+		log.Debugf("BTC: Get Multichain stats successfully")
 	}
 	// Update pageData with block data and chain (home) info.
 	p := exp.BtcPageData
@@ -1189,7 +1189,7 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 		log.Errorf("Get LTC last 10 block pools failed: ", err)
 	}
 	newBlockData.PoolDataList = last5BlockPools
-	log.Infof("Get last 10 LTC Blocks pool successfully")
+	log.Debugf("Get last 10 LTC Blocks pool successfully")
 	// get multichain stats from blockchair
 	totalAddresses := int64(0)
 	totalOutputs := int64(0)
@@ -1205,7 +1205,7 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 		volume24h = chainStats.Volume24h
 		nodes = chainStats.Nodes
 		avgTxFees24h = chainStats.AverageTransactionFee24h
-		log.Info("LTC: Get Multichain stats successfully")
+		log.Debugf("LTC: Get Multichain stats successfully")
 	}
 	// Update pageData with block data and chain (home) info.
 	p := exp.LtcPageData

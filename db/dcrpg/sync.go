@@ -1695,7 +1695,7 @@ func (pgb *ChainDB) SyncMultichainMetaInfo(btcDisabled, ltcDisabled bool) (err e
 func (pgb *ChainDB) SyncBTCMetaInfo() error {
 	pgb.multichainBtcMetaInfoSync.Lock()
 	defer pgb.multichainBtcMetaInfoSync.Unlock()
-	log.Info("Start sync btc meta info for meta table")
+	log.Debugf("Start sync btc meta info for meta table")
 	// check current height in meta table
 	var currentBlockHeight int64
 	err := pgb.db.QueryRow(internal.GetMultichainCurrentMetaInfoHeightQuery(mutilchain.TYPEBTC)).Scan(&currentBlockHeight)
@@ -1711,7 +1711,7 @@ func (pgb *ChainDB) SyncBTCMetaInfo() error {
 	}
 	addTxCount := int64(0)
 	// sync for tx count
-	log.Infof("Start calculate btc sum tx count/coin supply for blocks from %d to %d", currentBlockHeight+1, bestBlockHeight)
+	log.Debugf("Start calculate btc sum tx count/coin supply for blocks from %d to %d", currentBlockHeight+1, bestBlockHeight)
 	lastHeight := currentBlockHeight + 1
 	for i := currentBlockHeight + 1; i <= bestBlockHeight; i++ {
 		blockTxCount, err := pgb.GetMultichainBlockTxCount(int64(i), mutilchain.TYPEBTC)
@@ -1720,7 +1720,7 @@ func (pgb *ChainDB) SyncBTCMetaInfo() error {
 		}
 		addTxCount += int64(blockTxCount)
 		if i%50 == 0 || i == bestBlockHeight {
-			log.Infof("Completed calculating btc blocks from %d to %d", lastHeight, i)
+			log.Debugf("Completed calculating btc blocks from %d to %d", lastHeight, i)
 			lastHeight = i
 		}
 	}
@@ -1731,14 +1731,14 @@ func (pgb *ChainDB) SyncBTCMetaInfo() error {
 		log.Errorf("update btc meta info to meta table failed: %v", err)
 		return err
 	}
-	log.Infof("Finish sync btc meta info for meta table")
+	log.Debugf("Finish sync btc meta info for meta table")
 	return nil
 }
 
 func (pgb *ChainDB) SyncLTCMetaInfo() error {
 	pgb.multichainLtcMetaInfoSync.Lock()
 	defer pgb.multichainLtcMetaInfoSync.Unlock()
-	log.Info("Start sync ltc meta info for meta table")
+	log.Debugf("Start sync ltc meta info for meta table")
 	// check current height in meta table
 	var currentBlockHeight int64
 	err := pgb.db.QueryRow(internal.GetMultichainCurrentMetaInfoHeightQuery(mutilchain.TYPELTC)).Scan(&currentBlockHeight)
@@ -1754,7 +1754,7 @@ func (pgb *ChainDB) SyncLTCMetaInfo() error {
 	}
 	addTxCount := int64(0)
 	// sync for tx count
-	log.Infof("Start calculate ltc sum tx count/coin supply for blocks from %d to %d", currentBlockHeight+1, bestBlockHeight)
+	log.Debugf("Start calculate ltc sum tx count/coin supply for blocks from %d to %d", currentBlockHeight+1, bestBlockHeight)
 	lastHeight := currentBlockHeight + 1
 	for i := currentBlockHeight + 1; i <= bestBlockHeight; i++ {
 		blockTxCount, err := pgb.GetMultichainBlockTxCount(int64(i), mutilchain.TYPELTC)
@@ -1763,7 +1763,7 @@ func (pgb *ChainDB) SyncLTCMetaInfo() error {
 		}
 		addTxCount += int64(blockTxCount)
 		if i%50 == 0 || i == bestBlockHeight {
-			log.Infof("Completed calculating ltc blocks from %d to %d", lastHeight, i)
+			log.Debugf("Completed calculating ltc blocks from %d to %d", lastHeight, i)
 			lastHeight = i
 		}
 	}
@@ -1774,7 +1774,7 @@ func (pgb *ChainDB) SyncLTCMetaInfo() error {
 		log.Errorf("update ltc meta info to meta table failed: %v", err)
 		return err
 	}
-	log.Info("Finish sync ltc meta info for meta table")
+	log.Debugf("Finish sync ltc meta info for meta table")
 	return nil
 }
 
@@ -1919,7 +1919,7 @@ func (pgb *ChainDB) SyncBTCAtomicSwap() error {
 }
 
 func (pgb *ChainDB) SyncBTCAtomicSwapData(height int64) error {
-	log.Infof("Start Sync BTC swap data with height: %d", height)
+	log.Debugf("Start Sync BTC swap data with height: %d", height)
 	blockhash, err := pgb.BtcClient.GetBlockHash(height)
 	if err != nil {
 		return err
@@ -1974,12 +1974,12 @@ func (pgb *ChainDB) SyncBTCAtomicSwapData(height int64) error {
 		log.Errorf("Update BTC block synced status failed: %v", err)
 		return err
 	}
-	log.Infof("Finish Sync BTC swap data with height: %d", height)
+	log.Debugf("Finish Sync BTC swap data with height: %d", height)
 	return nil
 }
 
 func (pgb *ChainDB) SyncLTCAtomicSwapData(height int64) error {
-	log.Infof("Start Sync LTC swap data with height: %d", height)
+	log.Debugf("Start Sync LTC swap data with height: %d", height)
 	blockhash, err := pgb.LtcClient.GetBlockHash(height)
 	if err != nil {
 		return err
@@ -2034,7 +2034,7 @@ func (pgb *ChainDB) SyncLTCAtomicSwapData(height int64) error {
 		log.Errorf("Update LTC block synced status failed: %v", err)
 		return err
 	}
-	log.Infof("Finish Sync LTC swap data with height: %d", height)
+	log.Debugf("Finish Sync LTC swap data with height: %d", height)
 	return nil
 }
 

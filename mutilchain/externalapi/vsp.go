@@ -1,7 +1,6 @@
 package externalapi
 
 import (
-	"log"
 	"net/http"
 )
 
@@ -21,7 +20,7 @@ type VSPResponse struct {
 }
 
 func GetVSPList() ([]VSPResponse, error) {
-	log.Printf("Start get vsp list from API")
+	log.Debugf("Start get vsp list from API")
 	query := map[string]string{
 		"c": "vsp",
 	}
@@ -42,6 +41,6 @@ func GetVSPList() ([]VSPResponse, error) {
 		value.VSPLink = key
 		result = append(result, value)
 	}
-	log.Printf("Finished get vsp list from API")
+	log.Debugf("Finished get vsp list from API")
 	return result, nil
 }

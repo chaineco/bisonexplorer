@@ -3,7 +3,6 @@ package externalapi
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -109,7 +108,7 @@ func HandlerMutilchainChartsData(charts *cache.MutilchainChartData) error {
 }
 
 func HanlderAddressNumber(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on Address number API for %s", charts.ChainType)
+	log.Debugf("Start handler on Address number API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "addr_num",
@@ -143,12 +142,12 @@ func HanlderAddressNumber(charts *cache.MutilchainChartData) error {
 		zoomSet.APIAddressCount = append(zoomSet.APIAddressCount, uint64(addrCount))
 	}
 	charts.APIAddressCount = zoomSet
-	log.Printf("Finish handler on Address number API for %s", charts.ChainType)
+	log.Debugf("Finish handler on Address number API for %s", charts.ChainType)
 	return nil
 }
 
 func HanlderDifficulty(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on difficulty API for %s", charts.ChainType)
+	log.Debugf("Start handler on difficulty API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "difficulty",
@@ -182,12 +181,12 @@ func HanlderDifficulty(charts *cache.MutilchainChartData) error {
 		zoomSet.Difficulty = append(zoomSet.Difficulty, diffNumber)
 	}
 	charts.APIDifficulty = zoomSet
-	log.Printf("Finish handler on difficulty API for %s", charts.ChainType)
+	log.Debugf("Finish handler on difficulty API for %s", charts.ChainType)
 	return nil
 }
 
 func HanlderHashrate(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on hashrate API for %s", charts.ChainType)
+	log.Debugf("Start handler on hashrate API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "hashrate",
@@ -221,12 +220,12 @@ func HanlderHashrate(charts *cache.MutilchainChartData) error {
 		zoomSet.Hashrate = append(zoomSet.Hashrate, hashrateNumber)
 	}
 	charts.APIHashrate = zoomSet
-	log.Printf("Finish handler on hashrate API for %s", charts.ChainType)
+	log.Debugf("Finish handler on hashrate API for %s", charts.ChainType)
 	return nil
 }
 
 func HandlerCoinSupply(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on coin suplly API for %s", charts.ChainType)
+	log.Debugf("Start handler on coin suplly API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "total_block_reward",
@@ -260,12 +259,12 @@ func HandlerCoinSupply(charts *cache.MutilchainChartData) error {
 		zoomSet.NewAtoms = append(zoomSet.NewAtoms, uint64(math.Floor(coinSupplyNumber)))
 	}
 	charts.APICoinSupply = zoomSet
-	log.Printf("Finish handler on coin suplly API for %s", charts.ChainType)
+	log.Debugf("Finish handler on coin suplly API for %s", charts.ChainType)
 	return nil
 }
 
 func HandlerTxFeeAvg(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on tx fee average API for %s", charts.ChainType)
+	log.Debugf("Start handler on tx fee average API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "fee_avg",
@@ -299,12 +298,12 @@ func HandlerTxFeeAvg(charts *cache.MutilchainChartData) error {
 		zoomSet.Fees = append(zoomSet.Fees, uint64(math.Floor(txFeeAvgNum*1e8)))
 	}
 	charts.APITxFeeAvg = zoomSet
-	log.Printf("Finish handler on tx fee average API for %s", charts.ChainType)
+	log.Debugf("Finish handler on tx fee average API for %s", charts.ChainType)
 	return nil
 }
 
 func HandlerMempoolSize(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on mempool size API for %s", charts.ChainType)
+	log.Debugf("Start handler on mempool size API for %s", charts.ChainType)
 	url := fmt.Sprintf(mempoolUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "bytes",
@@ -338,12 +337,12 @@ func HandlerMempoolSize(charts *cache.MutilchainChartData) error {
 		zoomSet.APIMempoolSize = append(zoomSet.APIMempoolSize, uint64(math.Floor(memKbSize*math.Pow(2, 10))))
 	}
 	charts.APIMempoolSize = zoomSet
-	log.Printf("Finish handler on mempool size API for %s", charts.ChainType)
+	log.Debugf("Finish handler on mempool size API for %s", charts.ChainType)
 	return nil
 }
 
 func HanlderMempoolTxCount(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on mempool tx count API for %s", charts.ChainType)
+	log.Debugf("Start handler on mempool tx count API for %s", charts.ChainType)
 	url := fmt.Sprintf(mempoolUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "size",
@@ -376,12 +375,12 @@ func HanlderMempoolTxCount(charts *cache.MutilchainChartData) error {
 		zoomSet.APIMempoolTxNum = append(zoomSet.APIMempoolTxNum, uint64(txTotalNum))
 	}
 	charts.APIMempoolTxCount = zoomSet
-	log.Printf("Finish handler on mempool tx count API for %s", charts.ChainType)
+	log.Debugf("Finish handler on mempool tx count API for %s", charts.ChainType)
 	return nil
 }
 
 func HandlerTxTotalNum(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on tx total count API for %s", charts.ChainType)
+	log.Debugf("Start handler on tx total count API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "total_txnum",
@@ -415,12 +414,12 @@ func HandlerTxTotalNum(charts *cache.MutilchainChartData) error {
 		zoomSet.TxCount = append(zoomSet.TxCount, uint64(txTotalNum))
 	}
 	charts.APITxTotal = zoomSet
-	log.Printf("Finish handler on tx total count API for %s", charts.ChainType)
+	log.Debugf("Finish handler on tx total count API for %s", charts.ChainType)
 	return nil
 }
 
 func HandlerMinedBlocks(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on mined blocks API for %s", charts.ChainType)
+	log.Debugf("Start handler on mined blocks API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "block_size,block_num",
@@ -457,12 +456,12 @@ func HandlerMinedBlocks(charts *cache.MutilchainChartData) error {
 		zoomSet.APIMinedSize = append(zoomSet.APIMinedSize, uint64(math.Floor(blSize*math.Pow(2, 20))))
 	}
 	charts.APINewMinedBlocks = zoomSet
-	log.Printf("Finish handler on mined blocks API for %s", charts.ChainType)
+	log.Debugf("Finish handler on mined blocks API for %s", charts.ChainType)
 	return nil
 }
 
 func HandlerTxNumPerBlockAvg(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on tx number per block average API for %s", charts.ChainType)
+	log.Debugf("Start handler on tx number per block average API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "block_avg_txnum",
@@ -496,12 +495,12 @@ func HandlerTxNumPerBlockAvg(charts *cache.MutilchainChartData) error {
 		zoomSet.APITxAverage = append(zoomSet.APITxAverage, uint64(math.Floor(txNumAvg)))
 	}
 	charts.APITxNumPerBlockAvg = zoomSet
-	log.Printf("Finish handler on tx number per block average API for %s", charts.ChainType)
+	log.Debugf("Finish handler on tx number per block average API for %s", charts.ChainType)
 	return nil
 }
 
 func HandlerBlockSizeData(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on blockchain size API for %s", charts.ChainType)
+	log.Debugf("Start handler on blockchain size API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "block_avg_size",
@@ -535,12 +534,12 @@ func HandlerBlockSizeData(charts *cache.MutilchainChartData) error {
 		zoomSet.BlockSize = append(zoomSet.BlockSize, uint64(math.Floor(blMBSize*math.Pow(2, 20))))
 	}
 	charts.APIBlockSize = zoomSet
-	log.Printf("Finish handler on blockchain size API for %s", charts.ChainType)
+	log.Debugf("Finish handler on blockchain size API for %s", charts.ChainType)
 	return nil
 }
 
 func HandlerBlockchainSizeData(charts *cache.MutilchainChartData) error {
-	log.Printf("Start handler on blockchain size API for %s", charts.ChainType)
+	log.Debugf("Start handler on blockchain size API for %s", charts.ChainType)
 	url := fmt.Sprintf(blockdayUrl, charts.ChainType)
 	query := map[string]string{
 		"reqfields": "total_block_size",
@@ -574,7 +573,7 @@ func HandlerBlockchainSizeData(charts *cache.MutilchainChartData) error {
 		zoomSet.APIBlockchainSize = append(zoomSet.APIBlockchainSize, uint64(math.Floor(blMBSize*math.Pow(2, 20))))
 	}
 	charts.APIBlockchainSize = zoomSet
-	log.Printf("Finish handler on blockchain size API for %s", charts.ChainType)
+	log.Debugf("Finish handler on blockchain size API for %s", charts.ChainType)
 	return nil
 }
 
