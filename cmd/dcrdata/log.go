@@ -6,8 +6,11 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/decred/dcrd/rpcclient/v8"
 	"github.com/decred/slog"
@@ -31,52 +34,218 @@ import (
 	"github.com/decred/dcrdata/v8/stakedb"
 )
 
-// logWriter implements an io.Writer that outputs to both standard output and
-// the write-end pipe of an initialized log rotator.
-type logWriter struct{}
-
-// Write writes the data in p to standard out and the log rotator.
-func (logWriter) Write(p []byte) (n int, err error) {
-	os.Stdout.Write(p)
-	return logRotator.Write(p)
-}
-
-// Loggers per subsystem.  A single backend logger is created and all subsytem
-// loggers created from it will write to the backend.  When adding new
-// subsystems, add the subsystem logger variable here and to the
-// subsystemLoggers map.
-//
-// Loggers can not be used before the log rotator has been initialized with a
-// log file.  This must be performed early during application startup by calling
-// initLogRotator.
 var (
-	// backendLog is the logging backend used to create all subsystem loggers.
-	// The backend must not be used before the log rotator has been initialized,
-	// or data races and/or nil pointer dereferences will occur.
-	backendLog = slog.NewBackend(logWriter{})
+	infoRotator  *rotator.Rotator
+	debugRotator *rotator.Rotator
+	backendLog   *splitBackend
 
-	// logRotator is one of the logging outputs.  It should be closed on
-	// application shutdown.
-	logRotator *rotator.Rotator
+	// subsystem loggers (initialized in initLogRotators)
+	notifyLog     slog.Logger
+	postgresqlLog slog.Logger
+	stakedbLog    slog.Logger
+	BlockdataLog  slog.Logger
+	clientLog     slog.Logger
+	mempoolLog    slog.Logger
+	expLog        slog.Logger
+	apiLog        slog.Logger
+	log           slog.Logger
+	iapiLog       slog.Logger
+	pubsubLog     slog.Logger
+	xcBotLog      slog.Logger
+	agendasLog    slog.Logger
+	proposalsLog  slog.Logger
 
-	notifyLog     = backendLog.Logger("NTFN")
-	postgresqlLog = backendLog.Logger("PSQL")
-	stakedbLog    = backendLog.Logger("SKDB")
-	BlockdataLog  = backendLog.Logger("BLKD")
-	clientLog     = backendLog.Logger("RPCC")
-	mempoolLog    = backendLog.Logger("MEMP")
-	expLog        = backendLog.Logger("EXPR")
-	apiLog        = backendLog.Logger("JAPI")
-	log           = backendLog.Logger("DATD")
-	iapiLog       = backendLog.Logger("IAPI")
-	pubsubLog     = backendLog.Logger("PUBS")
-	xcBotLog      = backendLog.Logger("XBOT")
-	agendasLog    = backendLog.Logger("AGDB")
-	proposalsLog  = backendLog.Logger("PRDB")
+	// filled after init so setLogLevels works
+	subsystemLoggers map[string]slog.Logger
 )
 
-// Initialize package-global logger variables.
-func init() {
+// -------------------- Split backend --------------------
+
+// splitBackend implements slog.Backend and routes Debug/Trace to debugWriter,
+// and Info/Warn/Error/Critical to infoWriter.
+type splitBackend struct {
+	infoWriter  io.Writer
+	debugWriter io.Writer
+	mu          sync.Mutex
+}
+
+// splitLogger implements slog.Logger
+type splitLogger struct {
+	subsystem string
+	backend   *splitBackend
+	level     slog.Level
+}
+
+// NewSplitBackend creates a backend that writes to separate writers by level.
+// You can pass io.MultiWriter(os.Stdout, rotator) if you also want stdout.
+func NewSplitBackend(infoWriter, debugWriter io.Writer) *splitBackend {
+	return &splitBackend{
+		infoWriter:  infoWriter,
+		debugWriter: debugWriter,
+	}
+}
+
+// Logger implements slog.Backend. Default level = Info.
+func (b *splitBackend) Logger(subsystem string) slog.Logger {
+	return &splitLogger{
+		subsystem: subsystem,
+		backend:   b,
+		level:     slog.LevelInfo,
+	}
+}
+
+func (l *splitLogger) SetLevel(level slog.Level) { l.level = level }
+func (l *splitLogger) Level() slog.Level         { return l.level }
+
+func (l *splitLogger) write(w io.Writer, level string, format string, args ...interface{}) {
+	if w == nil {
+		// fail-safe to stderr if writer is nil
+		fmt.Fprintf(os.Stderr, "logger writer is nil for level %s [%s]\n", level, l.subsystem)
+		return
+	}
+	l.backend.mu.Lock()
+	defer l.backend.mu.Unlock()
+
+	ts := time.Now().Format("2006-01-02 15:04:05.000")
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(w, "%s [%s] %s: %s\n", ts, level, l.subsystem, msg)
+}
+
+// ---- implement full slog.Logger interface ----
+
+// Trace
+func (l *splitLogger) Trace(args ...interface{}) {
+	if l.level <= slog.LevelTrace {
+		l.write(l.backend.debugWriter, "TRC", "%s", fmt.Sprint(args...))
+	}
+}
+func (l *splitLogger) Tracef(format string, args ...interface{}) {
+	if l.level <= slog.LevelTrace {
+		l.write(l.backend.debugWriter, "TRC", format, args...)
+	}
+}
+
+// Debug
+func (l *splitLogger) Debug(args ...interface{}) {
+	if l.level <= slog.LevelDebug {
+		l.write(l.backend.debugWriter, "DBG", "%s", fmt.Sprint(args...))
+	}
+}
+func (l *splitLogger) Debugf(format string, args ...interface{}) {
+	if l.level <= slog.LevelDebug {
+		l.write(l.backend.debugWriter, "DBG", format, args...)
+	}
+}
+
+// Info
+func (l *splitLogger) Info(args ...interface{}) {
+	if l.level <= slog.LevelInfo {
+		l.write(l.backend.infoWriter, "INF", "%s", fmt.Sprint(args...))
+	}
+}
+func (l *splitLogger) Infof(format string, args ...interface{}) {
+	if l.level <= slog.LevelInfo {
+		l.write(l.backend.infoWriter, "INF", format, args...)
+	}
+}
+
+// Warn
+func (l *splitLogger) Warn(args ...interface{}) {
+	if l.level <= slog.LevelWarn {
+		l.write(l.backend.infoWriter, "WRN", "%s", fmt.Sprint(args...))
+	}
+}
+func (l *splitLogger) Warnf(format string, args ...interface{}) {
+	if l.level <= slog.LevelWarn {
+		l.write(l.backend.infoWriter, "WRN", format, args...)
+	}
+}
+
+// Error
+func (l *splitLogger) Error(args ...interface{}) {
+	if l.level <= slog.LevelError {
+		l.write(l.backend.infoWriter, "ERR", "%s", fmt.Sprint(args...))
+	}
+}
+func (l *splitLogger) Errorf(format string, args ...interface{}) {
+	if l.level <= slog.LevelError {
+		l.write(l.backend.infoWriter, "ERR", format, args...)
+	}
+}
+
+// Critical
+func (l *splitLogger) Critical(args ...interface{}) {
+	if l.level <= slog.LevelCritical {
+		l.write(l.backend.infoWriter, "CRT", "%s", fmt.Sprint(args...))
+	}
+}
+func (l *splitLogger) Criticalf(format string, args ...interface{}) {
+	if l.level <= slog.LevelCritical {
+		l.write(l.backend.infoWriter, "CRT", format, args...)
+	}
+}
+
+// -------------------- Init / helpers --------------------
+
+// initLogRotators creates two rotating files and wires the backend & loggers.
+// logPath: path to info/error file; debugLogPath: path to debug file.
+func initLogRotators(logPath, debugLogPath string, maxRolls int) {
+	// Ensure dirs
+	if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create log directory: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Dir(debugLogPath), 0700); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create debug log directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Rotators
+	var err error
+	infoRotator, err = rotator.New(logPath, 32*1024, false, maxRolls)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create info log rotator: %v\n", err)
+		os.Exit(1)
+	}
+	debugRotator, err = rotator.New(debugLogPath, 32*1024, false, maxRolls)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create debug log rotator: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Writers
+	infoWriter := io.MultiWriter(os.Stdout, infoRotator)
+	debugWriter := io.MultiWriter(os.Stdout, debugRotator)
+
+	// Backend
+	backendLog = NewSplitBackend(infoWriter, debugWriter)
+
+	// Subsystem loggers (create instance)
+	notifyLog = backendLog.Logger("NTFN")
+	postgresqlLog = backendLog.Logger("PSQL")
+	stakedbLog = backendLog.Logger("SKDB")
+	BlockdataLog = backendLog.Logger("BLKD")
+	clientLog = backendLog.Logger("RPCC")
+	mempoolLog = backendLog.Logger("MEMP")
+	expLog = backendLog.Logger("EXPR")
+	apiLog = backendLog.Logger("JAPI")
+	log = backendLog.Logger("DATD")
+	iapiLog = backendLog.Logger("IAPI")
+	pubsubLog = backendLog.Logger("PUBS")
+	xcBotLog = backendLog.Logger("XBOT")
+	agendasLog = backendLog.Logger("AGDB")
+	proposalsLog = backendLog.Logger("PRDB")
+
+	all := []slog.Logger{
+		notifyLog, postgresqlLog, stakedbLog, BlockdataLog, clientLog,
+		mempoolLog, expLog, apiLog, log, iapiLog, pubsubLog,
+		xcBotLog, agendasLog, proposalsLog,
+	}
+	for _, lg := range all {
+		lg.SetLevel(slog.LevelDebug)
+	}
+
+	// Wire external packages After turn on debug
 	dcrpg.UseLogger(postgresqlLog)
 	stakedb.UseLogger(stakedbLog)
 	blockdata.UseLogger(BlockdataLog)
@@ -92,66 +261,48 @@ func init() {
 	exchanges.UseLogger(xcBotLog)
 	agendas.UseLogger(agendasLog)
 	politeia.UseLogger(proposalsLog)
-}
 
-// subsystemLoggers maps each subsystem identifier to its associated logger.
-var subsystemLoggers = map[string]slog.Logger{
-	"NTFN": notifyLog,
-	"PSQL": postgresqlLog,
-	"SKDB": stakedbLog,
-	"BLKD": BlockdataLog,
-	"RPCC": clientLog,
-	"MEMP": mempoolLog,
-	"EXPR": expLog,
-	"JAPI": apiLog,
-	"IAPI": iapiLog,
-	"DATD": log,
-	"PUBS": pubsubLog,
-	"XBOT": xcBotLog,
-	"AGDB": agendasLog,
-	"PRDB": proposalsLog,
-}
-
-// initLogRotator initializes the logging rotater to write logs to logFile and
-// create roll files in the same directory.  It must be called before the
-// package-global log rotater variables are used.
-func initLogRotator(logFile string, maxRolls int) {
-	logDir, _ := filepath.Split(logFile)
-	err := os.MkdirAll(logDir, 0700)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create log directory: %v\n", err)
-		os.Exit(1)
+	// Save map to use setLogLevels laters
+	subsystemLoggers = map[string]slog.Logger{
+		"NTFN": notifyLog,
+		"PSQL": postgresqlLog,
+		"SKDB": stakedbLog,
+		"BLKD": BlockdataLog,
+		"RPCC": clientLog,
+		"MEMP": mempoolLog,
+		"EXPR": expLog,
+		"JAPI": apiLog,
+		"IAPI": iapiLog,
+		"DATD": log,
+		"PUBS": pubsubLog,
+		"XBOT": xcBotLog,
+		"AGDB": agendasLog,
+		"PRDB": proposalsLog,
 	}
-	r, err := rotator.New(logFile, 32*1024, false, maxRolls)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create file rotator: %v\n", err)
-		os.Exit(1)
-	}
-
-	logRotator = r
 }
 
-// setLogLevel sets the logging level for provided subsystem.  Invalid
-// subsystems are ignored.  Uninitialized subsystems are dynamically created as
-// needed.
+// Call this on shutdown.
+func closeLogRotators() {
+	if infoRotator != nil {
+		_ = infoRotator.Close()
+	}
+	if debugRotator != nil {
+		_ = debugRotator.Close()
+	}
+}
+
+// setLogLevel sets the logging level for a subsystem.
 func setLogLevel(subsystemID string, logLevel string) {
-	// Ignore invalid subsystems.
 	logger, ok := subsystemLoggers[subsystemID]
 	if !ok {
 		return
 	}
-
-	// Defaults to info if the log level is invalid.
-	level, _ := slog.LevelFromString(logLevel)
+	level, _ := slog.LevelFromString(logLevel) // defaults to info on invalid
 	logger.SetLevel(level)
 }
 
-// setLogLevels sets the log level for all subsystem loggers to the passed
-// level.  It also dynamically creates the subsystem loggers as needed, so it
-// can be used to initialize the logging system.
+// setLogLevels sets the log level for all subsystems.
 func setLogLevels(logLevel string) {
-	// Configure all sub-systems with the new logging level.  Dynamically
-	// create loggers as needed.
 	for subsystemID := range subsystemLoggers {
 		setLogLevel(subsystemID, logLevel)
 	}

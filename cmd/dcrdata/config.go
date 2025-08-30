@@ -34,11 +34,12 @@ import (
 )
 
 const (
-	defaultConfigFilename = "dcrdata.conf"
-	defaultLogFilename    = "dcrdata.log"
-	defaultDataDirname    = "data"
-	defaultLogLevel       = "info"
-	defaultLogDirname     = "logs"
+	defaultConfigFilename   = "dcrdata.conf"
+	defaultLogFilename      = "dcrdata.log"
+	defaultDebugLogFilename = "dcrdata_debug.log"
+	defaultDataDirname      = "data"
+	defaultLogLevel         = "info"
+	defaultLogDirname       = "logs"
 )
 
 var activeNet = &netparams.MainNetParams
@@ -625,7 +626,6 @@ func loadConfig() (*config, error) {
 		return nil, err
 	}
 
-	logRotator = nil
 	// Append the network type to the log directory so it is "namespaced"
 	// per network in the same fashion as the data directory.
 	cfg.LogDir = cleanAndExpandPath(cfg.LogDir)
@@ -636,11 +636,10 @@ func loadConfig() (*config, error) {
 	if cfg.MaxLogZips < 0 {
 		cfg.MaxLogZips = 0
 	}
-	initLogRotator(filepath.Join(cfg.LogDir, defaultLogFilename), cfg.MaxLogZips)
-
-	log.Infof("Log folder:  %s", cfg.LogDir)
+	initLogRotators(filepath.Join(cfg.LogDir, defaultLogFilename), filepath.Join(cfg.LogDir, defaultDebugLogFilename), cfg.MaxLogZips)
+	log.Infof("Info log file:  %s", filepath.Join(cfg.LogDir, defaultLogFilename))
+	log.Infof("Debug log file:  %s", filepath.Join(cfg.LogDir, defaultDebugLogFilename))
 	log.Infof("Config file: %s", configFile)
-
 	// Disable dev balance prefetch if network has invalid script.
 	_, err = dbtypes.DevSubsidyAddress(activeChain)
 	if !cfg.NoDevPrefetch && err != nil {

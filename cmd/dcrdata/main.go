@@ -70,7 +70,7 @@ func main() {
 	go shutdownListener()
 
 	if err := _main(ctx); err != nil {
-		if logRotator != nil {
+		if infoRotator != nil || debugRotator != nil {
 			log.Error(err)
 		}
 		os.Exit(1)
@@ -98,11 +98,7 @@ func _main(ctx context.Context) error {
 		fmt.Printf("Failed to load dcrdata config: %s\n", err.Error())
 		return err
 	}
-	defer func() {
-		if logRotator != nil {
-			logRotator.Close()
-		}
-	}()
+	defer closeLogRotators()
 
 	if cfg.CPUProfile != "" {
 		var f *os.File
