@@ -5166,6 +5166,10 @@ func (pgb *ChainDB) MutilchainDBAddressTransactionDetails(addr, chainType string
 	}, nil
 }
 
+func (pgb *ChainDB) MutilchainAPIAddressTransactionDetails(addr, chainType string, count, skip int64) (*externalapi.APIAddressInfo, error) {
+	return externalapi.GetAPIMutilchainAddressDetails(pgb.ChainApisUrl, addr, chainType, count, skip, 0)
+}
+
 // UpdateChainState updates the blockchain's state, which includes each of the
 // agenda's VotingDone and Activated heights. If the agenda passed (i.e. status
 // is "lockedIn" or "activated"), Activated is set to the height at which the

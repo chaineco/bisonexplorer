@@ -143,7 +143,7 @@ func GetChainAddressVins(chainApiUrls, chainType, address string) (*ChainAddress
 
 // GetChainAddressInfoAPI fetches address data from Chain API and returns APIAddressInfo
 func GetChainAddressInfoAPI(chainApiUrls, address, chainType string, limit, offset int64) (*APIAddressInfo, error) {
-	log.Debugf("Start get address data from Chain API for %s", chainType)
+	log.Infof("Start get address data from Chain API for %s", chainType)
 
 	// Get address summary data
 	summaryData, err := GetChainAddressInfo(chainApiUrls, chainType, address)
@@ -240,6 +240,6 @@ func GetChainAddressInfoAPI(chainApiUrls, address, chainType string, limit, offs
 	}
 
 	addressInfo.Transactions = transactions
-	log.Debugf("Finish get address data from Chain API for %s", chainType)
+	log.Infof("Finish get address data from Chain API for %s", chainType)
 	return addressInfo, nil
 }

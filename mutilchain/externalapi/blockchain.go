@@ -74,6 +74,7 @@ func GetBlockchainInfoAddressInfoAPI(address string, chainType string, limit, of
 	if chainType == mutilchain.TYPELTC {
 		return nil, fmt.Errorf("%s", "Blockchain.com does not support this blockchain")
 	}
+	log.Infof("Start get address data from Blockchain Info for %s", chainType)
 	var loopNum int64
 	if limit > 50 {
 		loopNum = limit/50 + 1
@@ -173,7 +174,7 @@ func GetBlockchainInfoAddressInfoAPI(address string, chainType string, limit, of
 		NumFundingTxns:  result.Ntx,
 		NumSpendingTxns: result.Ntx,
 	}
-
+	log.Infof("Finish get address data from Blockchain Info for %s", chainType)
 	return addressInfo, nil
 }
 

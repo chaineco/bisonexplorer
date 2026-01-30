@@ -167,6 +167,7 @@ type DataSource interface {
 	GetMoneroMempoolDetail() (any, error)
 	GetMoneroNetworkInfo() (any, error)
 	GetMoneroRawTransaction(txhash string) (any, error)
+	MutilchainAPIAddressTransactionDetails(addr, chainType string, count, skip int64) (*externalapi.APIAddressInfo, error)
 }
 
 // dcrdata application context used by all route handlers
@@ -4086,18 +4087,18 @@ func (c *appContext) getMultichainDBAddressTransactions(w http.ResponseWriter, r
 		skip = 0
 	}
 
-	txs, err := c.DataSource.MutilchainDBAddressTransactionDetails(address, chainType, count, skip)
+	addrInfo, err := c.DataSource.MutilchainAPIAddressTransactionDetails(address, chainType, count, skip)
 	if dbtypes.IsTimeoutErr(err) {
-		apiLog.Errorf("MutilchainDBAddressTransactionDetails: %v", err)
+		apiLog.Errorf("MutilchainAPIAddressTransactionDetails: %v", err)
 		http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
 		return
 	}
 
-	if txs == nil || err != nil {
+	if addrInfo == nil || err != nil {
 		http.Error(w, http.StatusText(422), 422)
 		return
 	}
-	writeJSON(w, *txs, m.GetIndentCtx(r))
+	writeJSON(w, *addrInfo, m.GetIndentCtx(r))
 }
 
 func (c *appContext) getMutilchainAddressTransactions(w http.ResponseWriter, r *http.Request) {

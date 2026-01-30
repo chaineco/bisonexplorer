@@ -47,6 +47,7 @@ func GetAPIMutilchainAddressDetails(chainApiUrls, address string, chainType stri
 		if err == nil {
 			return addrInfo, nil
 		}
+		log.Errorf("Get address info from %s failed: %v", api, err)
 	}
 	return nil, fmt.Errorf("%s", "Get address info from all API failed")
 }
