@@ -1452,6 +1452,10 @@ func (exp *ExplorerUI) GetAddressListFromPkScript(pkScriptsStr []byte, chainType
 
 // TxPage is the page handler for the "/tx" path.
 func (exp *ExplorerUI) MutilchainTxPage(w http.ResponseWriter, r *http.Request) {
+	if exp.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
+		return
+	}
+
 	// attempt to get tx hash string from URL path
 	hash, ok := r.Context().Value(ctxTxHash).(string)
 	if !ok {
@@ -1722,6 +1726,9 @@ func (exp *ExplorerUI) MutilchainTxPage(w http.ResponseWriter, r *http.Request) 
 
 // Block is the page handler for the "/block" path.
 func (exp *ExplorerUI) MutilchainBlockDetail(w http.ResponseWriter, r *http.Request) {
+	if exp.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
+		return
+	}
 	chainType := chi.URLParam(r, "chaintype")
 	if chainType == "" {
 		return
@@ -1852,6 +1859,9 @@ func (exp *ExplorerUI) MutilchainBlockDetail(w http.ResponseWriter, r *http.Requ
 
 // Block is the page handler for the "/block" path.
 func (exp *ExplorerUI) Block(w http.ResponseWriter, r *http.Request) {
+	if exp.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
+		return
+	}
 	// Retrieve the block specified on the path.
 	hash := getBlockHashCtx(r)
 	data := exp.dataSource.GetExplorerBlock(hash)
@@ -2017,6 +2027,9 @@ func (exp *ExplorerUI) Ticketpool(w http.ResponseWriter, r *http.Request) {
 
 // TxPage is the page handler for the "/tx" path.
 func (exp *ExplorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
+	if exp.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
+		return
+	}
 	// attempt to get tx hash string from URL path
 	hash, ok := r.Context().Value(ctxTxHash).(string)
 	if !ok {
@@ -2923,13 +2936,11 @@ func (exp *ExplorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 
 // AddressPage is the page handler for the "/address" path.
 func (exp *ExplorerUI) MutilchainAddressPage(w http.ResponseWriter, r *http.Request) {
-	chainType := chi.URLParam(r, "chaintype")
-	if chainType == "" {
+	if exp.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
 		return
 	}
-
-	// AddressPageData is the data structure passed to the HTML template
-	if exp.IsCrawlerUserAgent(r.UserAgent(), externalapi.GetIP(r)) {
+	chainType := chi.URLParam(r, "chaintype")
+	if chainType == "" {
 		return
 	}
 	type AddressPageData struct {
@@ -3009,7 +3020,7 @@ func (exp *ExplorerUI) MutilchainAddressPage(w http.ResponseWriter, r *http.Requ
 
 // AddressTable is the page handler for the "/addresstable" path.
 func (exp *ExplorerUI) MutilchainAddressTable(w http.ResponseWriter, r *http.Request) {
-	if exp.IsCrawlerUserAgent(r.UserAgent(), externalapi.GetIP(r)) {
+	if exp.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
 		return
 	}
 	// Grab the URL query parameters
