@@ -5265,35 +5265,44 @@ func (exp *ExplorerUI) IsCrawlerUserAgent(userAgent, ip string) bool {
 	return agents.IsCrawler(userAgent)
 }
 
-// IsCrawlerUserAgent return if is crawler user agent
+// IsCrawlerUserAgentAdvance return if is crawler user agent
 func (exp *ExplorerUI) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 	if strings.Contains(userAgent, "facebookexternalhit") {
 		return true
 	}
-	//check isCrawler
 	if crawlerdetect.IsCrawler(userAgent) {
 		return true
 	}
-	isCrawler := agents.IsCrawler(userAgent)
-	if isCrawler {
+	if agents.IsCrawler(userAgent) {
 		return true
 	}
+
 	ipRange := utils.GetIPRange(ip)
-	// check if is on black list
+
+	// Check dataSource is not nil
+	if exp.dataSource == nil {
+		log.Error("dataSource is nil in IsCrawlerUserAgentAdvance")
+		return false
+	}
+
 	inBlackList, err := exp.dataSource.CheckIPRangeOnBlackList(ipRange)
 	if err != nil || inBlackList {
 		return true
 	}
+
 	now := uint64(time.Now().Unix())
+
+	// Lock for all shared slice operations
+	exp.accessDataMu.Lock()
+	defer exp.accessDataMu.Unlock()
+
 	// remove all agent has duration >= 15s
 	remainList := make([]*externalapi.IPRangeAccessData, 0)
 	for _, ipRangeAccessData := range externalapi.AccessDataIPRanges {
-		// check duration with last time
 		duration := now - ipRangeAccessData.LastTime
-		if duration >= 15 {
-			continue
+		if duration < 15 {
+			remainList = append(remainList, ipRangeAccessData)
 		}
-		remainList = append(remainList, ipRangeAccessData)
 	}
 	externalapi.AccessDataIPRanges = remainList
 	// count on temp agents
