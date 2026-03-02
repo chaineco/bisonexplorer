@@ -76,7 +76,9 @@ func (pgb *ChainDB) GetLTCSwapFullDataByContractTx(contractTx, groupTx string) (
 			return
 		}
 		var txRaw *ltcjson.TxRawResult
-		txRaw, err = pgb.LtcClient.GetRawTransactionVerbose(txHash)
+		txRaw, err = ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+			return pgb.LtcClient.GetRawTransactionVerbose(txHash)
+		})
 		if err != nil {
 			return
 		}
@@ -134,11 +136,15 @@ func (pgb *ChainDB) GetLTCAtomicSwapTarget(groupTx string) (*dbtypes.AtomicSwapF
 		if err != nil {
 			return nil, err
 		}
-		contractTxRaw, err := pgb.LtcClient.GetRawTransactionVerbose(contractTxHash)
+		contractTxRaw, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+			return pgb.LtcClient.GetRawTransactionVerbose(contractTxHash)
+		})
 		if err != nil {
 			return nil, err
 		}
-		targetTxRaw, err := pgb.LtcClient.GetRawTransaction(contractTxHash)
+		targetTxRaw, err := ltcrpcutils.WithTimeout(func() (*ltcutil.Tx, error) {
+			return pgb.LtcClient.GetRawTransaction(contractTxHash)
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +152,9 @@ func (pgb *ChainDB) GetLTCAtomicSwapTarget(groupTx string) (*dbtypes.AtomicSwapF
 		if err != nil {
 			return nil, err
 		}
-		targetBlockHeader, err := pgb.LtcClient.GetBlockHeaderVerbose(targetBlockHash)
+		targetBlockHeader, err := ltcrpcutils.WithTimeout(func() (*ltcjson.GetBlockHeaderVerboseResult, error) {
+			return pgb.LtcClient.GetBlockHeaderVerbose(targetBlockHash)
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +254,9 @@ func (pgb *ChainDB) GetLTCBlockByHash(hash string) (int64, error) {
 		log.Errorf("LTC: Invalid block hash %s", hash)
 		return 0, err
 	}
-	blockRst, err := pgb.LtcClient.GetBlockVerbose(blockHash)
+	blockRst, err := ltcrpcutils.WithTimeout(func() (*ltcjson.GetBlockVerboseResult, error) {
+		return pgb.LtcClient.GetBlockVerbose(blockHash)
+	})
 	if err != nil {
 		log.Errorf("LTC: Get msg block failed %s", hash)
 		return 0, err
@@ -260,7 +270,9 @@ func (pgb *ChainDB) GetLTCDaemonTransaction(txid string) (*apitypes.MultichainTx
 	if err != nil {
 		return nil, err
 	}
-	txraw, err := pgb.LtcClient.GetRawTransactionVerbose(txHash)
+	txraw, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+		return pgb.LtcClient.GetRawTransactionVerbose(txHash)
+	})
 	if err != nil {
 		log.Errorf("GetLTCDaemonTransaction failed for %v: %v", txid, err)
 		return nil, err
@@ -326,7 +338,9 @@ func (pgb *ChainDB) GetLTCAllTxIn(txid string) ([]*apitypes.MultichainTxIn, erro
 	if err != nil {
 		return nil, err
 	}
-	tx, err := pgb.LtcClient.GetRawTransactionVerbose(txhash)
+	tx, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+		return pgb.LtcClient.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		log.Warnf("[LTC] Unknown transaction %s", txid)
 		return nil, err
@@ -358,7 +372,9 @@ func (pgb *ChainDB) GetLTCAllTxOut(txid string) ([]*apitypes.MultichainTxOut, er
 	if err != nil {
 		return nil, err
 	}
-	tx, err := pgb.LtcClient.GetRawTransactionVerbose(txhash)
+	tx, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+		return pgb.LtcClient.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		log.Warnf("[LTC] Unknown transaction %s", txid)
 		return nil, err
@@ -622,7 +638,9 @@ func (pgb *ChainDB) GetLTCExplorerBlocks(start int, end int) []*exptypes.BlockBa
 
 // LtcTxResult returns the raw LTC transaction result and block height.
 func (pgb *ChainDB) LtcTxResult(txhash *ltc_chainhash.Hash) (*ltcjson.TxRawResult, int64, error) {
-	txraw, err := pgb.LtcClient.GetRawTransactionVerbose(txhash)
+	txraw, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+		return pgb.LtcClient.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("LTC: GetRawTransactionVerbose failed for %v: %w", txhash, err)
 	}
@@ -705,7 +723,9 @@ func (pgb *ChainDB) GetLTCExplorerTx(txid string) *exptypes.TxInfo {
 		if err != nil {
 			log.Errorf("LTC: Invalid vin transaction hash %s", vin.Txid)
 		} else {
-			txraw, err := pgb.LtcClient.GetRawTransactionVerbose(vinHash)
+			txraw, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+				return pgb.LtcClient.GetRawTransactionVerbose(vinHash)
+			})
 			if err != nil {
 				log.Errorf("LTC: GetRawTransactionVerbose failed for %v: %w", vinHash, err)
 			} else {
@@ -735,7 +755,9 @@ func (pgb *ChainDB) GetLTCExplorerTx(txid string) *exptypes.TxInfo {
 	var totalVout float64
 	for i, vout := range txraw.Vout {
 		// Determine spent status with gettxout, including mempool.
-		txout, err := pgb.LtcClient.GetTxOut(txhash, uint32(i), true)
+		txout, err := ltcrpcutils.WithTimeout(func() (*ltcjson.GetTxOutResult, error) {
+			return pgb.LtcClient.GetTxOut(txhash, uint32(i), true)
+		})
 		if err != nil {
 			log.Warnf("Failed to determine if tx out is spent for output %d of tx %s: %v", i, txid, err)
 		}
@@ -800,11 +822,15 @@ func (pgb *ChainDB) SignalLTCHeight(height uint32) {
 
 // GetLTCBlockHashTime returns the hash and timestamp of a LTC block by height.
 func (pgb *ChainDB) GetLTCBlockHashTime(height int32) (string, int64, error) {
-	blockhash, err := pgb.LtcClient.GetBlockHash(int64(height))
+	blockhash, err := ltcrpcutils.WithTimeout(func() (*ltc_chainhash.Hash, error) {
+		return pgb.LtcClient.GetBlockHash(int64(height))
+	})
 	if err != nil {
 		return "", 0, err
 	}
-	blockRst, rstErr := pgb.LtcClient.GetBlock(blockhash)
+	blockRst, rstErr := ltcrpcutils.WithTimeout(func() (*ltcwire.MsgBlock, error) {
+		return pgb.LtcClient.GetBlock(blockhash)
+	})
 	if rstErr != nil {
 		return "", 0, rstErr
 	}
@@ -813,14 +839,29 @@ func (pgb *ChainDB) GetLTCBlockHashTime(height int32) (string, int64, error) {
 
 // GetLTCBestBlock retrieves the best LTC block from the node.
 func (pgb *ChainDB) GetLTCBestBlock() error {
-	ltcHash, ltcHeight, err := pgb.LtcClient.GetBestBlock()
+	type bestBlockResult struct {
+		hash   *ltc_chainhash.Hash
+		height int32
+	}
+	result, err := ltcrpcutils.WithTimeout(func() (*bestBlockResult, error) {
+		hash, height, err := pgb.LtcClient.GetBestBlock()
+		if err != nil {
+			return nil, err
+		}
+		return &bestBlockResult{hash, height}, nil
+	})
 	ltcTime := int64(0)
 	if err != nil {
 		return fmt.Errorf("Unable to get block from ltc node: %v", err)
 	}
-	blockhash, err := pgb.LtcClient.GetBlockHash(int64(ltcHeight))
+	ltcHash, ltcHeight := result.hash, result.height
+	blockhash, err := ltcrpcutils.WithTimeout(func() (*ltc_chainhash.Hash, error) {
+		return pgb.LtcClient.GetBlockHash(int64(ltcHeight))
+	})
 	if err == nil {
-		blockRst, rstErr := pgb.LtcClient.GetBlockVerbose(blockhash)
+		blockRst, rstErr := ltcrpcutils.WithTimeout(func() (*ltcjson.GetBlockVerboseResult, error) {
+			return pgb.LtcClient.GetBlockVerbose(blockhash)
+		})
 		if rstErr == nil {
 			ltcTime = blockRst.Time
 		}

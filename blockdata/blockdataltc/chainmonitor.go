@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/decred/dcrdata/v8/mutilchain"
+	"github.com/decred/dcrdata/v8/mutilchain/ltcrpcutils"
+	"github.com/ltcsuite/ltcd/btcjson"
 	"github.com/ltcsuite/ltcd/chaincfg/chainhash"
 	"github.com/ltcsuite/ltcd/wire"
 )
@@ -39,8 +41,12 @@ func NewChainMonitor(ctx context.Context, collector *Collector, savers []BlockDa
 
 func (p *chainMonitor) collect(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData, error) {
 	// getblock RPC
-	msgBlock, err := p.collector.ltcdChainSvr.GetBlock(hash)
-	blockHeader, blockHeaderErr := p.collector.ltcdChainSvr.GetBlockHeaderVerbose(hash)
+	msgBlock, err := ltcrpcutils.WithTimeout(func() (*wire.MsgBlock, error) {
+		return p.collector.ltcdChainSvr.GetBlock(hash)
+	})
+	blockHeader, blockHeaderErr := ltcrpcutils.WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
+		return p.collector.ltcdChainSvr.GetBlockHeaderVerbose(hash)
+	})
 	if err != nil || blockHeaderErr != nil {
 		return nil, nil, fmt.Errorf("failed to get block %v", hash)
 	}
@@ -49,7 +55,9 @@ func (p *chainMonitor) collect(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData
 
 	// Get node's best block height to see if the block for which we are
 	// collecting data is the best block.
-	chainHeight, err := p.collector.ltcdChainSvr.GetBlockCount()
+	chainHeight, err := ltcrpcutils.WithTimeout(func() (int64, error) {
+		return p.collector.ltcdChainSvr.GetBlockCount()
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get chain height: %v", err)
 	}

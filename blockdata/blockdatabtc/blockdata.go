@@ -16,6 +16,7 @@ import (
 	apitypes "github.com/decred/dcrdata/v8/api/types"
 	"github.com/decred/dcrdata/v8/db/dbtypes"
 	"github.com/decred/dcrdata/v8/mutilchain"
+	"github.com/decred/dcrdata/v8/mutilchain/btcrpcutils"
 	"github.com/decred/dcrdata/v8/stakedb"
 )
 
@@ -92,8 +93,12 @@ func (t *Collector) CollectAPITypes(hash *chainhash.Hash) *apitypes.BlockDataBas
 func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataBasic, *btcjson.GetBlockHeaderVerboseResult,
 	*apitypes.BlockExplorerExtraInfo, *wire.MsgBlock, error) {
 	// Retrieve block from dcrd.
-	blockHeader, err := t.btcdChainSvr.GetBlockHeaderVerbose(hash)
-	msgBlock, blockErr := t.btcdChainSvr.GetBlock(hash)
+	blockHeader, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
+		return t.btcdChainSvr.GetBlockHeaderVerbose(hash)
+	})
+	msgBlock, blockErr := btcrpcutils.WithTimeout(func() (*wire.MsgBlock, error) {
+		return t.btcdChainSvr.GetBlock(hash)
+	})
 	if err != nil || blockErr != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Retrieve block info error")
 	}
@@ -136,19 +141,23 @@ func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBloc
 	}
 
 	// Number of peer connection to chain server
-	numConn, err := t.btcdChainSvr.GetConnectionCount()
+	numConn, err := btcrpcutils.WithTimeout(func() (int64, error) {
+		return t.btcdChainSvr.GetConnectionCount()
+	})
 	if err != nil {
 		log.Warn("Unable to get connection count: ", err)
 	}
 
 	// Blockchain info (e.g. syncheight, verificationprogress, chainwork,
 	// bestblockhash, initialblockdownload, maxblocksize, deployments, etc.).
-	chainInfo, err := t.btcdChainSvr.GetBlockChainInfo()
+	chainInfo, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockChainInfoResult, error) {
+		return t.btcdChainSvr.GetBlockChainInfo()
+	})
 	if err != nil {
 		log.Warn("Unable to get blockchain info: ", err)
 	}
 	// GetBlockChainInfo is only valid for for chain tip.
-	if chainInfo.BestBlockHash != hash.String() {
+	if chainInfo != nil && chainInfo.BestBlockHash != hash.String() {
 		chainInfo = nil
 	}
 
@@ -178,7 +187,9 @@ func (t *Collector) Collect() (*BlockData, *wire.MsgBlock, error) {
 	// Pull and store relevant data about the blockchain (e.g. syncheight,
 	// verificationprogress, chainwork, bestblockhash, initialblockdownload,
 	// maxblocksize, deployments, etc.).
-	blockchainInfo, err := t.btcdChainSvr.GetBlockChainInfo()
+	blockchainInfo, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockChainInfoResult, error) {
+		return t.btcdChainSvr.GetBlockChainInfo()
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get blockchain info: %v", err)
 	}
@@ -194,7 +205,9 @@ func (t *Collector) Collect() (*BlockData, *wire.MsgBlock, error) {
 		return nil, nil, err
 	}
 	// Number of peer connection to chain server
-	numConn, err := t.btcdChainSvr.GetConnectionCount()
+	numConn, err := btcrpcutils.WithTimeout(func() (int64, error) {
+		return t.btcdChainSvr.GetConnectionCount()
+	})
 	if err != nil {
 		log.Warn("Unable to get connection count: ", err)
 	}

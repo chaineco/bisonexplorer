@@ -20,6 +20,7 @@ import (
 	"github.com/decred/dcrdata/v8/txhelpers"
 	"github.com/decred/dcrdata/v8/txhelpers/ltctxhelper"
 	"github.com/ltcsuite/ltcd/chaincfg"
+	ltcchainhash "github.com/ltcsuite/ltcd/chaincfg/chainhash"
 	"github.com/ltcsuite/ltcd/ltcutil"
 	ltcClient "github.com/ltcsuite/ltcd/rpcclient"
 	"github.com/ltcsuite/ltcd/wire"
@@ -44,10 +45,21 @@ func (db *ChainDB) SyncLTCChainDBAsync(res chan dbtypes.SyncResult,
 func (db *ChainDB) SyncLTCChainDB(client *ltcClient.Client, quit chan struct{},
 	newIndexes, updateAllAddresses bool) (int64, error) {
 	// Get chain servers's best block
-	_, nodeHeight, err := client.GetBestBlock()
+	type ltcBestBlockResult struct {
+		hash   *ltcchainhash.Hash
+		height int32
+	}
+	bestBlockRes, err := ltcrpcutils.WithTimeout(func() (*ltcBestBlockResult, error) {
+		hash, height, err := client.GetBestBlock()
+		if err != nil {
+			return nil, err
+		}
+		return &ltcBestBlockResult{hash, height}, nil
+	})
 	if err != nil {
 		return -1, fmt.Errorf("GetBestBlock LTC failed: %v", err)
 	}
+	nodeHeight := bestBlockRes.height
 	// Total and rate statistics
 	var totalTxs, totalVins, totalVouts int64
 	var lastTxs, lastVins, lastVouts int64
@@ -145,9 +157,17 @@ func (db *ChainDB) SyncLTCChainDB(client *ltcClient.Client, quit chan struct{},
 		// totalSTxs += numSTx
 
 		// update height, the end condition for the loop
-		if _, nodeHeight, err = client.GetBestBlock(); err != nil {
+		bestBlockUpd, err := ltcrpcutils.WithTimeout(func() (*ltcBestBlockResult, error) {
+			hash, height, err := client.GetBestBlock()
+			if err != nil {
+				return nil, err
+			}
+			return &ltcBestBlockResult{hash, height}, nil
+		})
+		if err != nil {
 			return ib, fmt.Errorf("GetBestBlock failed: %v", err)
 		}
+		nodeHeight = bestBlockUpd.height
 	}
 
 	speedReport()
@@ -234,9 +254,21 @@ func (pgb *ChainDB) SyncLast20LTCBlocks(nodeHeight int32) error {
 		numRTx := int64(len(block.Transactions()))
 		totalTxs += numRTx
 		// update height, the end condition for the loop
-		if _, nodeHeight, err = pgb.LtcClient.GetBestBlock(); err != nil {
+		type ltcBestBlockResult struct {
+			hash   *ltcchainhash.Hash
+			height int32
+		}
+		bestBlockUpd, err := ltcrpcutils.WithTimeout(func() (*ltcBestBlockResult, error) {
+			hash, height, err := pgb.LtcClient.GetBestBlock()
+			if err != nil {
+				return nil, err
+			}
+			return &ltcBestBlockResult{hash, height}, nil
+		})
+		if err != nil {
 			return fmt.Errorf("LTC: GetBestBlock failed: %v", err)
 		}
+		nodeHeight = bestBlockUpd.height
 	}
 	log.Debugf("LTC: Sync last 20 Blocks of LTC finished at height %d. Delta: %d blocks, %d transactions, %d ins, %d outs",
 		nodeHeight, int64(nodeHeight)-int64(startHeight)+1, totalTxs, totalVins, totalVouts)
@@ -862,12 +894,16 @@ func (pgb *ChainDB) SyncLTCAtomicSwap() error {
 
 func (pgb *ChainDB) SyncLTCAtomicSwapData(height int64) error {
 	log.Debugf("Start Sync LTC swap data with height: %d", height)
-	blockhash, err := pgb.LtcClient.GetBlockHash(height)
+	blockhash, err := ltcrpcutils.WithTimeout(func() (*ltcchainhash.Hash, error) {
+		return pgb.LtcClient.GetBlockHash(height)
+	})
 	if err != nil {
 		return err
 	}
 
-	msgBlock, err := pgb.LtcClient.GetBlock(blockhash)
+	msgBlock, err := ltcrpcutils.WithTimeout(func() (*wire.MsgBlock, error) {
+		return pgb.LtcClient.GetBlock(blockhash)
+	})
 	if err != nil {
 		return err
 	}

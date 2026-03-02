@@ -74,7 +74,9 @@ func (pgb *ChainDB) GetBTCSwapFullDataByContractTx(contractTx, groupTx string) (
 			return
 		}
 		var txRaw *btcjson.TxRawResult
-		txRaw, err = pgb.BtcClient.GetRawTransactionVerbose(txHash)
+		txRaw, err = btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+			return pgb.BtcClient.GetRawTransactionVerbose(txHash)
+		})
 		if err != nil {
 			return
 		}
@@ -132,11 +134,15 @@ func (pgb *ChainDB) GetBTCAtomicSwapTarget(groupTx string) (*dbtypes.AtomicSwapF
 		if err != nil {
 			return nil, err
 		}
-		contractTxRaw, err := pgb.BtcClient.GetRawTransactionVerbose(contractTxHash)
+		contractTxRaw, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+			return pgb.BtcClient.GetRawTransactionVerbose(contractTxHash)
+		})
 		if err != nil {
 			return nil, err
 		}
-		targetTxRaw, err := pgb.BtcClient.GetRawTransaction(contractTxHash)
+		targetTxRaw, err := btcrpcutils.WithTimeout(func() (*btcutil.Tx, error) {
+			return pgb.BtcClient.GetRawTransaction(contractTxHash)
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +150,9 @@ func (pgb *ChainDB) GetBTCAtomicSwapTarget(groupTx string) (*dbtypes.AtomicSwapF
 		if err != nil {
 			return nil, err
 		}
-		targetBlockHeader, err := pgb.BtcClient.GetBlockHeaderVerbose(targetBlockHash)
+		targetBlockHeader, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
+			return pgb.BtcClient.GetBlockHeaderVerbose(targetBlockHash)
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +262,9 @@ func (pgb *ChainDB) GetBTCBlockByHash(hash string) (int64, error) {
 		log.Errorf("BTC: Invalid block hash %s", hash)
 		return 0, err
 	}
-	blockRst, err := pgb.BtcClient.GetBlockVerbose(blockHash)
+	blockRst, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockVerboseResult, error) {
+		return pgb.BtcClient.GetBlockVerbose(blockHash)
+	})
 	if err != nil {
 		log.Errorf("BTC: Get msg block failed %s", hash)
 		return 0, err
@@ -268,7 +278,9 @@ func (pgb *ChainDB) GetBTCDaemonTransaction(txid string) (*apitypes.MultichainTx
 	if err != nil {
 		return nil, err
 	}
-	txraw, err := pgb.BtcClient.GetRawTransactionVerbose(txHash)
+	txraw, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+		return pgb.BtcClient.GetRawTransactionVerbose(txHash)
+	})
 	if err != nil {
 		log.Errorf("GetBTCDaemonTransaction failed for %v: %v", txid, err)
 		return nil, err
@@ -334,7 +346,9 @@ func (pgb *ChainDB) GetBTCAllTxIn(txid string) ([]*apitypes.MultichainTxIn, erro
 	if err != nil {
 		return nil, err
 	}
-	tx, err := pgb.BtcClient.GetRawTransactionVerbose(txhash)
+	tx, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+		return pgb.BtcClient.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		log.Warnf("[BTC] Unknown transaction %s", txid)
 		return nil, err
@@ -366,7 +380,9 @@ func (pgb *ChainDB) GetBTCAllTxOut(txid string) ([]*apitypes.MultichainTxOut, er
 	if err != nil {
 		return nil, err
 	}
-	tx, err := pgb.BtcClient.GetRawTransactionVerbose(txhash)
+	tx, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+		return pgb.BtcClient.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		log.Warnf("[BTC] Unknown transaction %s", txid)
 		return nil, err
@@ -603,7 +619,9 @@ func (pgb *ChainDB) GetBTCExplorerBlocks(start int, end int) []*exptypes.BlockBa
 
 // BtcTxResult returns the raw BTC transaction result and block height.
 func (pgb *ChainDB) BtcTxResult(txhash *btc_chainhash.Hash) (*btcjson.TxRawResult, int64, error) {
-	txraw, err := pgb.BtcClient.GetRawTransactionVerbose(txhash)
+	txraw, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+		return pgb.BtcClient.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("BTC: GetRawTransactionVerbose failed for %v: %w", txhash, err)
 	}
@@ -686,7 +704,9 @@ func (pgb *ChainDB) GetBTCExplorerTx(txid string) *exptypes.TxInfo {
 		if err != nil {
 			log.Errorf("BTC: Invalid vin transaction hash %s", vin.Txid)
 		} else {
-			txraw, err := pgb.BtcClient.GetRawTransactionVerbose(vinHash)
+			txraw, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+				return pgb.BtcClient.GetRawTransactionVerbose(vinHash)
+			})
 			if err != nil {
 				log.Errorf("BTC: GetRawTransactionVerbose failed for %v: %w", vinHash, err)
 			} else {
@@ -716,7 +736,9 @@ func (pgb *ChainDB) GetBTCExplorerTx(txid string) *exptypes.TxInfo {
 	var totalVout float64
 	for i, vout := range txraw.Vout {
 		// Determine spent status with gettxout, including mempool.
-		txout, err := pgb.BtcClient.GetTxOut(txhash, uint32(i), true)
+		txout, err := btcrpcutils.WithTimeout(func() (*btcjson.GetTxOutResult, error) {
+			return pgb.BtcClient.GetTxOut(txhash, uint32(i), true)
+		})
 		if err != nil {
 			log.Warnf("Failed to determine if tx out is spent for output %d of tx %s: %v", i, txid, err)
 		}
@@ -781,11 +803,15 @@ func (pgb *ChainDB) SignalBTCHeight(height uint32) {
 
 // GetBTCBlockHashTime returns the hash and timestamp of a BTC block by height.
 func (pgb *ChainDB) GetBTCBlockHashTime(height int32) (string, int64, error) {
-	blockhash, err := pgb.BtcClient.GetBlockHash(int64(height))
+	blockhash, err := btcrpcutils.WithTimeout(func() (*btc_chainhash.Hash, error) {
+		return pgb.BtcClient.GetBlockHash(int64(height))
+	})
 	if err != nil {
 		return "", 0, err
 	}
-	blockRst, rstErr := pgb.BtcClient.GetBlock(blockhash)
+	blockRst, rstErr := btcrpcutils.WithTimeout(func() (*btcwire.MsgBlock, error) {
+		return pgb.BtcClient.GetBlock(blockhash)
+	})
 	if rstErr != nil {
 		return "", 0, rstErr
 	}
@@ -794,14 +820,29 @@ func (pgb *ChainDB) GetBTCBlockHashTime(height int32) (string, int64, error) {
 
 // GetBTCBestBlock retrieves the best BTC block from the node.
 func (pgb *ChainDB) GetBTCBestBlock() error {
-	btcHash, btcHeight, err := pgb.BtcClient.GetBestBlock()
+	type bestBlockResult struct {
+		hash   *btc_chainhash.Hash
+		height int32
+	}
+	result, err := btcrpcutils.WithTimeout(func() (*bestBlockResult, error) {
+		hash, height, err := pgb.BtcClient.GetBestBlock()
+		if err != nil {
+			return nil, err
+		}
+		return &bestBlockResult{hash, height}, nil
+	})
 	btcTime := int64(0)
 	if err != nil {
 		return fmt.Errorf("Unable to get block from btc node: %v", err)
 	}
-	blockhash, err := pgb.BtcClient.GetBlockHash(int64(btcHeight))
+	btcHash, btcHeight := result.hash, result.height
+	blockhash, err := btcrpcutils.WithTimeout(func() (*btc_chainhash.Hash, error) {
+		return pgb.BtcClient.GetBlockHash(int64(btcHeight))
+	})
 	if err == nil {
-		blockRst, rstErr := pgb.BtcClient.GetBlockVerbose(blockhash)
+		blockRst, rstErr := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockVerboseResult, error) {
+			return pgb.BtcClient.GetBlockVerbose(blockhash)
+		})
 		if rstErr == nil {
 			btcTime = blockRst.Time
 		}

@@ -36,7 +36,9 @@ func (pgb *ChainDB) GetLTCTransactionByHash(txid string) (*ltcutil.Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	tx, err := pgb.LtcClient.GetRawTransaction(txhash)
+	tx, err := ltcrpcutils.WithTimeout(func() (*ltcutil.Tx, error) {
+		return pgb.LtcClient.GetRawTransaction(txhash)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +51,9 @@ func (pgb *ChainDB) GetBTCTransactionByHash(txid string) (*btcutil.Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	tx, err := pgb.BtcClient.GetRawTransaction(txhash)
+	tx, err := btcrpcutils.WithTimeout(func() (*btcutil.Tx, error) {
+		return pgb.BtcClient.GetRawTransaction(txhash)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +206,9 @@ func (pgb *ChainDB) GetBTCTxHex(txid string) string {
 		log.Errorf("New BTC hash failed: %v", err)
 		return ""
 	}
-	tx, err := pgb.BtcClient.GetRawTransactionVerbose(txhash)
+	tx, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+		return pgb.BtcClient.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		log.Errorf("Get BTC transaction verbose failed: %v", err)
 		return ""
@@ -217,7 +223,9 @@ func (pgb *ChainDB) GetLTCTxHex(txid string) string {
 		log.Errorf("New LTC hash failed: %v", err)
 		return ""
 	}
-	tx, err := pgb.LtcClient.GetRawTransactionVerbose(txhash)
+	tx, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+		return pgb.LtcClient.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		log.Errorf("Get LTC transaction verbose failed: %v", err)
 		return ""
@@ -295,7 +303,9 @@ func (pgb *ChainDB) GetBTCBlockVerboseByHash(hash string) *btcjson.GetBlockVerbo
 		return nil
 	}
 
-	blockVerbose, err := pgb.BtcClient.GetBlockVerbose(blockhash)
+	blockVerbose, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockVerboseResult, error) {
+		return pgb.BtcClient.GetBlockVerbose(blockhash)
+	})
 	if err != nil {
 		log.Errorf("GetBlockVerbose(%v) failed: %v", hash, err)
 		return nil

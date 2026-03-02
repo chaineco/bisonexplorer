@@ -86,7 +86,9 @@ func LTCOutPointAddresses(outPoint *ltcwire.OutPoint, c LTCRawTransactionGetter,
 	params *ltcchaincfg.Params) ([]string, ltcutil.Amount, error) {
 	// The addresses are encoded in the pkScript, so we need to get the
 	// raw transaction, and the TxOut that contains the pkScript.
-	prevTx, err := c.GetRawTransaction(&outPoint.Hash)
+	prevTx, err := WithTimeout(func() (*ltcutil.Tx, error) {
+		return c.GetRawTransaction(&outPoint.Hash)
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("unable to get raw transaction for %s", outPoint.Hash.String())
 	}
@@ -197,7 +199,9 @@ func LTCTxPrevOutsByAddr(txAddrOuts LTCMempoolAddressStore, txnsStore LTCTxnsSto
 		if ltcZeroHash.IsEqual(hash) {
 			continue // coinbase or stakebase
 		}
-		txVerbose, txErr := c.GetRawTransactionVerbose(hash)
+		txVerbose, txErr := WithTimeout(func() (*ltcjson.TxRawResult, error) {
+			return c.GetRawTransactionVerbose(hash)
+		})
 		if txErr != nil {
 			continue
 		}
@@ -251,7 +255,9 @@ func LTCTxPrevOutsByAddr(txAddrOuts LTCMempoolAddressStore, txnsStore LTCTxnsSto
 			continue
 		}
 
-		blockVerbose, err := c.GetBlockVerboseTx(blockhash)
+		blockVerbose, err := WithTimeout(func() (*ltcjson.GetBlockVerboseTxResult, error) {
+			return c.GetBlockVerboseTx(blockhash)
+		})
 		if err != nil {
 			fmt.Printf("Get block failed: %s", prevTxRaw.BlockHash)
 			continue
@@ -308,7 +314,9 @@ func LTCTxFeeRate(msgTx *ltcwire.MsgTx, client LTCVerboseTransactionGetter) (ltc
 		if err != nil {
 			continue
 		}
-		txResult, err := client.GetRawTransactionVerbose(blockhash)
+		txResult, err := WithTimeout(func() (*ltcjson.TxRawResult, error) {
+			return client.GetRawTransactionVerbose(blockhash)
+		})
 		if err != nil {
 			continue
 		}
@@ -327,7 +335,9 @@ func getLTCTotalInput(client *rpcclient.Client, tx *wire.MsgTx) (ltcutil.Amount,
 	var totalInput ltcutil.Amount
 
 	for _, vin := range tx.TxIn {
-		prevTx, err := client.GetRawTransactionVerbose(&vin.PreviousOutPoint.Hash)
+		prevTx, err := WithTimeout(func() (*ltcjson.TxRawResult, error) {
+			return client.GetRawTransactionVerbose(&vin.PreviousOutPoint.Hash)
+		})
 		if err != nil {
 			return 0, err
 		}

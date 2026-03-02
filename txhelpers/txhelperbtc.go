@@ -86,7 +86,9 @@ func BTCOutPointAddresses(outPoint *btcwire.OutPoint, c BTCRawTransactionGetter,
 	params *btcchaincfg.Params) ([]string, btcutil.Amount, error) {
 	// The addresses are encoded in the pkScript, so we need to get the
 	// raw transaction, and the TxOut that contains the pkScript.
-	prevTx, err := c.GetRawTransaction(&outPoint.Hash)
+	prevTx, err := WithTimeout(func() (*btcutil.Tx, error) {
+		return c.GetRawTransaction(&outPoint.Hash)
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("unable to get raw transaction for %s", outPoint.Hash.String())
 	}
@@ -197,7 +199,9 @@ func BTCTxPrevOutsByAddr(txAddrOuts BTCMempoolAddressStore, txnsStore BTCTxnsSto
 		if btcZeroHash.IsEqual(hash) {
 			continue // coinbase or stakebase
 		}
-		txVerbose, txErr := c.GetRawTransactionVerbose(hash)
+		txVerbose, txErr := WithTimeout(func() (*btcjson.TxRawResult, error) {
+			return c.GetRawTransactionVerbose(hash)
+		})
 		if txErr != nil {
 			continue
 		}
@@ -250,7 +254,9 @@ func BTCTxPrevOutsByAddr(txAddrOuts BTCMempoolAddressStore, txnsStore BTCTxnsSto
 			continue
 		}
 
-		blockVerbose, err := c.GetBlockVerboseTx(blockhash)
+		blockVerbose, err := WithTimeout(func() (*btcjson.GetBlockVerboseTxResult, error) {
+			return c.GetBlockVerboseTx(blockhash)
+		})
 		if err != nil {
 			fmt.Printf("Get block failed: %s", prevTxRaw.BlockHash)
 			continue
@@ -304,7 +310,9 @@ func getBTCTotalInput(client *rpcclient.Client, tx *wire.MsgTx) (btcutil.Amount,
 	var totalInput btcutil.Amount
 
 	for _, vin := range tx.TxIn {
-		prevTx, err := client.GetRawTransactionVerbose(&vin.PreviousOutPoint.Hash)
+		prevTx, err := WithTimeout(func() (*btcjson.TxRawResult, error) {
+			return client.GetRawTransactionVerbose(&vin.PreviousOutPoint.Hash)
+		})
 		if err != nil {
 			return 0, err
 		}
@@ -350,7 +358,9 @@ func BTCTxFeeRate(msgTx *btcwire.MsgTx, client BTCVerboseTransactionGetter) (btc
 		if err != nil {
 			continue
 		}
-		txResult, err := client.GetRawTransactionVerbose(blockhash)
+		txResult, err := WithTimeout(func() (*btcjson.TxRawResult, error) {
+			return client.GetRawTransactionVerbose(blockhash)
+		})
 		if err != nil {
 			continue
 		}

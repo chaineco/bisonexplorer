@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
@@ -99,6 +100,11 @@ var compatibleChainServerAPIs = []semver.Semver{
 	semver.NewSemver(2, 0, 0), // removed methods we no longer use i.e. searchrawtransactions
 }
 
+// DefaultRPCTimeout is the timeout for individual RPC calls to btcd.
+// If btcd becomes unresponsive, calls will fail after this duration
+// instead of blocking indefinitely.
+var DefaultRPCTimeout = 30 * time.Second
+
 var (
 	zeroHash = chainhash.Hash{}
 	// zeroHashStringBytes = []byte(chainhash.Hash{}.String())
@@ -107,7 +113,32 @@ var (
 
 	ErrAncestorAtGenesis      = errors.New("no ancestor: at genesis")
 	ErrAncestorMaxChainLength = errors.New("no ancestor: max chain length reached")
+	ErrRPCTimeout             = errors.New("BTC RPC call timed out")
 )
+
+// WithTimeout wraps an RPC call with a timeout. If the call does not complete
+// within DefaultRPCTimeout, ErrRPCTimeout is returned. This prevents the
+// application from freezing when btcd becomes unresponsive.
+func WithTimeout[T any](fn func() (T, error)) (T, error) {
+	type result struct {
+		val T
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		v, err := fn()
+		ch <- result{v, err}
+	}()
+	timer := time.NewTimer(DefaultRPCTimeout)
+	defer timer.Stop()
+	select {
+	case r := <-ch:
+		return r.val, r.err
+	case <-timer.C:
+		var zero T
+		return zero, ErrRPCTimeout
+	}
+}
 
 // ConnectNodeRPC attempts to create a new websocket connection to a dcrd node,
 // with the given credentials and optional notification handlers.
@@ -181,7 +212,9 @@ func GetRawTransactionByTxidStr(client TransactionGetter, txid string) (*btcjson
 		return nil, err
 	}
 
-	transactionRslt, err := client.GetRawTransactionVerbose(txhash)
+	transactionRslt, err := WithTimeout(func() (*btcjson.TxRawResult, error) {
+		return client.GetRawTransactionVerbose(txhash)
+	})
 	if err != nil {
 		log.Errorf("GetTransaction(%v) failed: %v", txhash, err)
 		return nil, err
@@ -193,13 +226,17 @@ func GetRawTransactionByTxidStr(client TransactionGetter, txid string) (*btcjson
 // GetBlockHeaderVerbose creates a *chainjson.GetBlockHeaderVerboseResult for the
 // block at height idx via an RPC connection to a chain server.
 func GetBlockHeaderVerbose(client BlockFetcher, idx int64) *btcjson.GetBlockHeaderVerboseResult {
-	blockhash, err := client.GetBlockHash(idx)
+	blockhash, err := WithTimeout(func() (*chainhash.Hash, error) {
+		return client.GetBlockHash(idx)
+	})
 	if err != nil {
 		log.Errorf("GetBlockHash(%d) failed: %v", idx, err)
 		return nil
 	}
 
-	blockHeaderVerbose, err := client.GetBlockHeaderVerbose(blockhash)
+	blockHeaderVerbose, err := WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
+		return client.GetBlockHeaderVerbose(blockhash)
+	})
 	if err != nil {
 		log.Errorf("GetBlockHeaderVerbose(%v) failed: %v", blockhash, err)
 		return nil
@@ -217,7 +254,9 @@ func GetBlockHeaderVerboseByString(client BlockFetcher, hash string) *btcjson.Ge
 		return nil
 	}
 
-	blockHeaderVerbose, err := client.GetBlockHeaderVerbose(blockhash)
+	blockHeaderVerbose, err := WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
+		return client.GetBlockHeaderVerbose(blockhash)
+	})
 	if err != nil {
 		log.Errorf("GetBlockHeaderVerbose(%v) failed: %v", blockhash, err)
 		return nil
@@ -240,7 +279,9 @@ func IsValidBlockHash(client BlockFetcher, hash string) bool {
 		return false
 	}
 
-	_, err = client.GetBlockHeaderVerbose(blockhash)
+	_, err = WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
+		return client.GetBlockHeaderVerbose(blockhash)
+	})
 	return err == nil
 }
 
@@ -249,12 +290,16 @@ func IsValidTxHash(client TransactionGetter, hash string) bool {
 	if err != nil {
 		return false
 	}
-	_, err = client.GetRawTransactionVerbose(txhash)
+	_, err = WithTimeout(func() (*btcjson.TxRawResult, error) {
+		return client.GetRawTransactionVerbose(txhash)
+	})
 	return err == nil
 }
 
 func GetBlockchainDifficulty(client BlockchainGetter) (float64, error) {
-	blockchainInfo, err := client.GetBlockChainInfo()
+	blockchainInfo, err := WithTimeout(func() (*btcjson.GetBlockChainInfoResult, error) {
+		return client.GetBlockChainInfo()
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -264,13 +309,17 @@ func GetBlockchainDifficulty(client BlockchainGetter) (float64, error) {
 // GetBlockVerbose creates a *chainjson.GetBlockVerboseResult for the block index
 // specified by idx via an RPC connection to a chain server.
 func GetBlockVerbose(client VerboseBlockGetter, idx int64) *btcjson.GetBlockVerboseResult {
-	blockhash, err := client.GetBlockHash(idx)
+	blockhash, err := WithTimeout(func() (*chainhash.Hash, error) {
+		return client.GetBlockHash(idx)
+	})
 	if err != nil {
 		log.Errorf("GetBlockHash(%d) failed: %v", idx, err)
 		return nil
 	}
 
-	blockVerbose, err := client.GetBlockVerbose(blockhash)
+	blockVerbose, err := WithTimeout(func() (*btcjson.GetBlockVerboseResult, error) {
+		return client.GetBlockVerbose(blockhash)
+	})
 	if err != nil {
 		log.Errorf("GetBlockVerbose(%v) failed: %v", blockhash, err)
 		return nil
@@ -280,13 +329,17 @@ func GetBlockVerbose(client VerboseBlockGetter, idx int64) *btcjson.GetBlockVerb
 }
 
 func GetBlockVerboseTx(client VerboseBlockGetter, idx int64) *btcjson.GetBlockVerboseTxResult {
-	blockhash, err := client.GetBlockHash(idx)
+	blockhash, err := WithTimeout(func() (*chainhash.Hash, error) {
+		return client.GetBlockHash(idx)
+	})
 	if err != nil {
 		log.Errorf("GetBlockHash(%d) failed: %v", idx, err)
 		return nil
 	}
 
-	blockVerbose, err := client.GetBlockVerboseTx(blockhash)
+	blockVerbose, err := WithTimeout(func() (*btcjson.GetBlockVerboseTxResult, error) {
+		return client.GetBlockVerboseTx(blockhash)
+	})
 	if err != nil {
 		log.Errorf("GetBlockVerboseTx(%v) failed: %v", blockhash, err)
 		return nil
@@ -304,7 +357,9 @@ func GetBlockVerboseByHash(client VerboseBlockGetter, hash string) *btcjson.GetB
 		return nil
 	}
 
-	blockVerbose, err := client.GetBlockVerbose(blockhash)
+	blockVerbose, err := WithTimeout(func() (*btcjson.GetBlockVerboseResult, error) {
+		return client.GetBlockVerbose(blockhash)
+	})
 	if err != nil {
 		log.Errorf("GetBlockVerbose(%v) failed: %v", blockhash, err)
 		return nil
@@ -313,7 +368,7 @@ func GetBlockVerboseByHash(client VerboseBlockGetter, hash string) *btcjson.GetB
 	return blockVerbose
 }
 
-// GetBlockVerboseByHash creates a *chainjson.GetBlockVerboseResult for the
+// GetBlockVerboseTxByHash creates a *chainjson.GetBlockVerboseTxResult for the
 // specified block hash via an RPC connection to a chain server.
 func GetBlockVerboseTxByHash(client VerboseBlockGetter, hash string) *btcjson.GetBlockVerboseTxResult {
 	blockhash, err := chainhash.NewHashFromStr(hash)
@@ -322,7 +377,9 @@ func GetBlockVerboseTxByHash(client VerboseBlockGetter, hash string) *btcjson.Ge
 		return nil
 	}
 
-	blockVerbose, err := client.GetBlockVerboseTx(blockhash)
+	blockVerbose, err := WithTimeout(func() (*btcjson.GetBlockVerboseTxResult, error) {
+		return client.GetBlockVerboseTx(blockhash)
+	})
 	if err != nil {
 		log.Errorf("GetBlockVerbose(%v) failed: %v", blockhash, err)
 		return nil
@@ -333,12 +390,16 @@ func GetBlockVerboseTxByHash(client VerboseBlockGetter, hash string) *btcjson.Ge
 
 // GetBlock gets a block at the given height from a chain server.
 func GetBlock(ind int64, client BlockFetcher) (*btcutil.Block, *chainhash.Hash, error) {
-	blockhash, err := client.GetBlockHash(ind)
+	blockhash, err := WithTimeout(func() (*chainhash.Hash, error) {
+		return client.GetBlockHash(ind)
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetBlockHash(%d) failed: %v", ind, err)
 	}
 
-	msgBlock, err := client.GetBlock(blockhash)
+	msgBlock, err := WithTimeout(func() (*wire.MsgBlock, error) {
+		return client.GetBlock(blockhash)
+	})
 	if err != nil {
 		return nil, blockhash,
 			fmt.Errorf("GetBlock failed (%s): %v", blockhash, err)
@@ -350,7 +411,9 @@ func GetBlock(ind int64, client BlockFetcher) (*btcutil.Block, *chainhash.Hash, 
 
 // GetBlockByHash gets the block with the given hash from a chain server.
 func GetBlockByHash(blockhash *chainhash.Hash, client BlockFetcher) (*btcutil.Block, error) {
-	msgBlock, err := client.GetBlock(blockhash)
+	msgBlock, err := WithTimeout(func() (*wire.MsgBlock, error) {
+		return client.GetBlock(blockhash)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("GetBlock failed (%s): %v", blockhash, err)
 	}
@@ -437,7 +500,9 @@ func OrphanedTipLength(ctx context.Context, client BlockHashGetter,
 		if err != nil {
 			return -1, fmt.Errorf("Unable to retrieve block at height %d: %v", commonHeight, err)
 		}
-		dcrdHash, err = client.GetBlockHash(commonHeight)
+		dcrdHash, err = WithTimeout(func() (*chainhash.Hash, error) {
+			return client.GetBlockHash(commonHeight)
+		})
 		if err != nil {
 			return -1, fmt.Errorf("Unable to retrieve dcrd block at height %d: %v", commonHeight, err)
 		}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
+	btcchainhash "github.com/btcsuite/btcd/chaincfg/chainhash"
 	btcClient "github.com/btcsuite/btcd/rpcclient"
 	btcwire "github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrdata/db/dcrpg/v8/internal/mutilchainquery"
@@ -44,10 +45,21 @@ func (db *ChainDB) SyncBTCChainDBAsync(res chan dbtypes.SyncResult,
 func (db *ChainDB) SyncBTCChainDB(client *btcClient.Client, quit chan struct{},
 	newIndexes, updateAllAddresses bool) (int64, error) {
 	// Get chain servers's best block
-	_, nodeHeight, err := client.GetBestBlock()
+	type btcBestBlockResult struct {
+		hash   *btcchainhash.Hash
+		height int32
+	}
+	bestBlockRes, err := btcrpcutils.WithTimeout(func() (*btcBestBlockResult, error) {
+		hash, height, err := client.GetBestBlock()
+		if err != nil {
+			return nil, err
+		}
+		return &btcBestBlockResult{hash, height}, nil
+	})
 	if err != nil {
 		return -1, fmt.Errorf("GetBestBlock BTC failed: %v", err)
 	}
+	nodeHeight := bestBlockRes.height
 	// Total and rate statistics
 	var totalTxs, totalVins, totalVouts int64
 	var lastTxs, lastVins, lastVouts int64
@@ -145,9 +157,17 @@ func (db *ChainDB) SyncBTCChainDB(client *btcClient.Client, quit chan struct{},
 		// totalSTxs += numSTx
 
 		// update height, the end condition for the loop
-		if _, nodeHeight, err = client.GetBestBlock(); err != nil {
+		bestBlockUpd, err := btcrpcutils.WithTimeout(func() (*btcBestBlockResult, error) {
+			hash, height, err := client.GetBestBlock()
+			if err != nil {
+				return nil, err
+			}
+			return &btcBestBlockResult{hash, height}, nil
+		})
+		if err != nil {
 			return ib, fmt.Errorf("BTC: GetBestBlock failed: %v", err)
 		}
+		nodeHeight = bestBlockUpd.height
 	}
 
 	speedReport()
@@ -233,9 +253,21 @@ func (pgb *ChainDB) SyncLast20BTCBlocks(nodeHeight int32) error {
 		numRTx := int64(len(block.Transactions()))
 		totalTxs += numRTx
 		// update height, the end condition for the loop
-		if _, nodeHeight, err = pgb.BtcClient.GetBestBlock(); err != nil {
+		type btcBestBlockResult struct {
+			hash   *btcchainhash.Hash
+			height int32
+		}
+		bestBlockUpd, err := btcrpcutils.WithTimeout(func() (*btcBestBlockResult, error) {
+			hash, height, err := pgb.BtcClient.GetBestBlock()
+			if err != nil {
+				return nil, err
+			}
+			return &btcBestBlockResult{hash, height}, nil
+		})
+		if err != nil {
 			return fmt.Errorf("BTC: GetBestBlock failed: %v", err)
 		}
+		nodeHeight = bestBlockUpd.height
 	}
 
 	log.Debugf("BTC: Sync last 20 Blocks of BTC finished at height %d. Delta: %d blocks, %d transactions, %d ins, %d outs",
@@ -858,12 +890,16 @@ func (pgb *ChainDB) SyncBTCAtomicSwap() error {
 
 func (pgb *ChainDB) SyncBTCAtomicSwapData(height int64) error {
 	log.Debugf("Start Sync BTC swap data with height: %d", height)
-	blockhash, err := pgb.BtcClient.GetBlockHash(height)
+	blockhash, err := btcrpcutils.WithTimeout(func() (*btcchainhash.Hash, error) {
+		return pgb.BtcClient.GetBlockHash(height)
+	})
 	if err != nil {
 		return err
 	}
 
-	msgBlock, err := pgb.BtcClient.GetBlock(blockhash)
+	msgBlock, err := btcrpcutils.WithTimeout(func() (*btcwire.MsgBlock, error) {
+		return pgb.BtcClient.GetBlock(blockhash)
+	})
 	if err != nil {
 		return err
 	}

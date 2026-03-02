@@ -11,9 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrdata/v8/mutilchain"
+	"github.com/decred/dcrdata/v8/mutilchain/btcrpcutils"
 )
 
 // for getblock, ticketfeeinfo, estimatestakediff, etc.
@@ -39,8 +41,12 @@ func NewChainMonitor(ctx context.Context, collector *Collector, savers []BlockDa
 
 func (p *chainMonitor) collect(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData, error) {
 	// getblock RPC
-	msgBlock, err := p.collector.btcdChainSvr.GetBlock(hash)
-	blockHeader, blockHeaderErr := p.collector.btcdChainSvr.GetBlockHeaderVerbose(hash)
+	msgBlock, err := btcrpcutils.WithTimeout(func() (*wire.MsgBlock, error) {
+		return p.collector.btcdChainSvr.GetBlock(hash)
+	})
+	blockHeader, blockHeaderErr := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
+		return p.collector.btcdChainSvr.GetBlockHeaderVerbose(hash)
+	})
 	if err != nil || blockHeaderErr != nil {
 		return nil, nil, fmt.Errorf("failed to get block %v", hash)
 	}
@@ -49,7 +55,9 @@ func (p *chainMonitor) collect(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData
 
 	// Get node's best block height to see if the block for which we are
 	// collecting data is the best block.
-	chainHeight, err := p.collector.btcdChainSvr.GetBlockCount()
+	chainHeight, err := btcrpcutils.WithTimeout(func() (int64, error) {
+		return p.collector.btcdChainSvr.GetBlockCount()
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get chain height: %v", err)
 	}
