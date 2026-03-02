@@ -236,9 +236,11 @@ func (pgb *ChainDB) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltcwir
 		}()
 	}
 	//update best ltc block
+	pgb.LtcBestBlock.Mtx.Lock()
 	pgb.LtcBestBlock.Hash = blockData.Header.Hash
 	pgb.LtcBestBlock.Height = int64(blockData.Header.Height)
 	pgb.LtcBestBlock.Time = blockData.Header.Time
+	pgb.LtcBestBlock.Mtx.Unlock()
 	// Signal updates to any subscribed heightClients.
 	pgb.SignalLTCHeight(uint32(blockData.Header.Height))
 	// sync for ltc atomic swap
