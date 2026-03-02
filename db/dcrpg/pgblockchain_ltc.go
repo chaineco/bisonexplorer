@@ -759,55 +759,94 @@ func (pgb *ChainDB) GetLTCExplorerTx(txid string) *exptypes.TxInfo {
 		Time:          exptypes.NewTimeDefFromUNIX(txraw.Time),
 	}
 
-	// tree := txType stake.TxTypeRegular
+	// --- Phase 1: Pre-fetch all unique previous transactions concurrently ---
+	prevTxCache := make(map[string]*ltcjson.TxRawResult)
+	{
+		needed := make(map[string]struct{})
+		for i := range txraw.Vin {
+			if txraw.Vin[i].IsCoinBase() {
+				continue
+			}
+			prevOut := &msgTx.TxIn[i].PreviousOutPoint
+			if !txhelpers.IsLTCZeroHash(prevOut.Hash) {
+				needed[prevOut.Hash.String()] = struct{}{}
+			}
+		}
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for tid := range needed {
+			wg.Add(1)
+			go func(txid string) {
+				defer wg.Done()
+				h, err := ltc_chainhash.NewHashFromStr(txid)
+				if err != nil {
+					return
+				}
+				result, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
+					return pgb.LtcClient.GetRawTransactionVerbose(h)
+				})
+				if err == nil && result != nil {
+					mu.Lock()
+					prevTxCache[txid] = result
+					mu.Unlock()
+				}
+			}(tid)
+		}
+		wg.Wait()
+	}
+
+	// --- Phase 2: Pre-fetch unique block heights concurrently ---
+	blockHeightCache := make(map[string]int64)
+	{
+		blockHashes := make(map[string]struct{})
+		for _, result := range prevTxCache {
+			if result.BlockHash != "" {
+				blockHashes[result.BlockHash] = struct{}{}
+			}
+		}
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for bh := range blockHashes {
+			wg.Add(1)
+			go func(hash string) {
+				defer wg.Done()
+				height, err := pgb.GetMutilchainBlockHeightByHash(hash, mutilchain.TYPELTC)
+				if err == nil {
+					mu.Lock()
+					blockHeightCache[hash] = height
+					mu.Unlock()
+				}
+			}(bh)
+		}
+		wg.Wait()
+	}
+
+	// --- Phase 3: Process vins using cached data ---
 	var totalVin float64
 	inputs := make([]exptypes.MutilchainVin, 0, len(txraw.Vin))
 	for i := range txraw.Vin {
 		vin := &txraw.Vin[i]
-		// The addresses are may only be obtained by decoding the previous
-		// output's pkscript.
 		var addresses []string
-		// The vin amount is now correct in most cases, but get it from the
-		// previous output anyway and compare the values for information.
 		valueIn, _ := ltcutil.NewAmount(float64(vin.Vout))
-		// Do not attempt to look up prevout if it is a coinbase or stakebase
-		// input, which does not spend a previous output.
+		vinBlockHeight := int64(0)
+
 		prevOut := &msgTx.TxIn[i].PreviousOutPoint
 		if !txhelpers.IsLTCZeroHash(prevOut.Hash) {
-			// Store the vin amount for comparison.
-			valueIn0 := valueIn
-
-			addresses, valueIn, err = txhelpers.LTCOutPointAddresses(
-				prevOut, pgb.LtcClient, pgb.ltcChainParams)
-			if err != nil {
-				log.Warnf("Failed to get outpoint address from txid: %v", err)
-				continue
-			}
-			// See if getrawtransaction had correct vin amounts. It should
-			// except for votes on side chain blocks.
-			if valueIn != valueIn0 {
-				log.Debugf("vin amount in: prevout RPC = %v, vin's amount = %v",
-					valueIn, valueIn0)
+			prevTxid := prevOut.Hash.String()
+			if prevTx, ok := prevTxCache[prevTxid]; ok {
+				if int(prevOut.Index) < len(prevTx.Vout) {
+					prevVout := &prevTx.Vout[prevOut.Index]
+					addresses = prevVout.ScriptPubKey.Addresses
+					valueIn, _ = ltcutil.NewAmount(prevVout.Value)
+				}
+				if prevTx.BlockHash != "" {
+					vinBlockHeight = blockHeightCache[prevTx.BlockHash]
+				}
 			}
 		}
 
-		// Assemble and append this vin.
 		coinIn := valueIn.ToBTC()
 		totalVin += coinIn
-		vinBlockHeight := int64(0)
-		vinHash, err := ltc_chainhash.NewHashFromStr(vin.Txid)
-		if err != nil {
-			log.Errorf("LTC: Invalid vin transaction hash %s", vin.Txid)
-		} else {
-			txraw, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
-				return pgb.LtcClient.GetRawTransactionVerbose(vinHash)
-			})
-			if err != nil {
-				log.Errorf("LTC: GetRawTransactionVerbose failed for %v: %w", vinHash, err)
-			} else {
-				vinBlockHeight, _ = pgb.GetMutilchainBlockHeightByHash(txraw.BlockHash, mutilchain.TYPELTC)
-			}
-		}
 		inputs = append(inputs, exptypes.MutilchainVin{
 			Txid:            vin.Txid,
 			Coinbase:        vin.Coinbase,
@@ -827,16 +866,32 @@ func (pgb *ChainDB) GetLTCExplorerTx(txid string) *exptypes.TxInfo {
 	tx.MaturityTimeTill = ((float64(pgb.ltcChainParams.CoinbaseMaturity) -
 		float64(tx.Confirmations)) / float64(pgb.ltcChainParams.CoinbaseMaturity)) * CoinbaseMaturityInHours
 
+	// --- Phase 4: Pre-fetch all vout spent status concurrently ---
+	txOutResults := make([]*ltcjson.GetTxOutResult, len(txraw.Vout))
+	{
+		var wg sync.WaitGroup
+		for i := range txraw.Vout {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				txout, err := ltcrpcutils.WithTimeout(func() (*ltcjson.GetTxOutResult, error) {
+					return pgb.LtcClient.GetTxOut(txhash, uint32(idx), true)
+				})
+				if err != nil {
+					log.Warnf("Failed to determine if tx out is spent for output %d of tx %s: %v", idx, txid, err)
+					return
+				}
+				txOutResults[idx] = txout
+			}(i)
+		}
+		wg.Wait()
+	}
+
+	// --- Phase 5: Process vouts using cached data ---
 	outputs := make([]exptypes.Vout, 0, len(txraw.Vout))
 	var totalVout float64
 	for i, vout := range txraw.Vout {
-		// Determine spent status with gettxout, including mempool.
-		txout, err := ltcrpcutils.WithTimeout(func() (*ltcjson.GetTxOutResult, error) {
-			return pgb.LtcClient.GetTxOut(txhash, uint32(i), true)
-		})
-		if err != nil {
-			log.Warnf("Failed to determine if tx out is spent for output %d of tx %s: %v", i, txid, err)
-		}
+		txout := txOutResults[i]
 		var opReturn string
 		var opTAdd bool
 		if strings.HasPrefix(vout.ScriptPubKey.Asm, "OP_RETURN") {
@@ -844,7 +899,6 @@ func (pgb *ChainDB) GetLTCExplorerTx(txid string) *exptypes.TxInfo {
 		} else {
 			opTAdd = strings.HasPrefix(vout.ScriptPubKey.Asm, "OP_TADD")
 		}
-		// Get a consistent script class string from dbtypes.ScriptClass.
 		outputs = append(outputs, exptypes.Vout{
 			Addresses:       vout.ScriptPubKey.Addresses,
 			Amount:          vout.Value,
