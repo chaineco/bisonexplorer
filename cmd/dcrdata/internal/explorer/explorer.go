@@ -1030,32 +1030,60 @@ func (exp *ExplorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 
 // Store implements BlockDataSaver.
 func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btcwire.MsgBlock) error {
-	// Retrieve block data for the passed block hash.
-	newBlockData := exp.dataSource.GetBTCExplorerBlock(msgBlock.BlockHash().String())
-
-	// Use the latest block's blocktime to get the last 24hr timestamp.
-	// day := 24 * time.Hour
 	targetTimePerBlock := float64(exp.BtcChainParams.TargetTimePerBlock)
 
-	// // Hashrate change over last day
-	// timestamp := newBlockData.BlockTime.T.Add(-day).Unix()
-	// last24hrDifficulty := exp.dataSource.MutilchainDifficulty(timestamp, mutilchain.TYPEBTC)
-	// last24HrHashRate := dbtypes.CalculateHashRate(last24hrDifficulty, targetTimePerBlock)
+	// --- Fetch independent data sources concurrently ---
+	var newBlockData *types.BlockInfo
+	var blockchainInfo *mutilchain.BlockchainInfo
+	var chainErr error
+	var blocks []*types.BlockInfo
+	var last5BlockPools []*dbtypes.MultichainPoolDataItem
+	var poolErr error
 
-	// // Hashrate change over last month
-	// timestamp = newBlockData.BlockTime.T.Add(-30 * day).Unix()
-	// lastMonthDifficulty := exp.dataSource.MutilchainDifficulty(timestamp, mutilchain.TYPEBTC)
-	// lastMonthHashRate := dbtypes.CalculateHashRate(lastMonthDifficulty, targetTimePerBlock)
+	var wg sync.WaitGroup
 
+	// Fetch explorer block data
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		newBlockData = exp.dataSource.GetBTCExplorerBlock(msgBlock.BlockHash().String())
+	}()
+
+	// Fetch blockchain info
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		blockchainInfo, chainErr = exp.dataSource.MutilchainGetBlockchainInfo(mutilchain.TYPEBTC)
+	}()
+
+	wg.Wait()
+
+	// These depend on newBlockData being ready
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		blocks = exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPEBTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		last5BlockPools, poolErr = exp.dataSource.GetLastMultichainPoolDataList(mutilchain.TYPEBTC, newBlockData.Height)
+		if poolErr != nil {
+			log.Errorf("Get BTC last 10 block pools failed: ", poolErr)
+		}
+	}()
+
+	wg.Wait()
+
+	newBlockData.PoolDataList = last5BlockPools
+
+	// Process blockchain info
 	totalTransactionCount := int64(0)
 	chainSize := int64(0)
 	difficulty := float64(0)
 	coinSupply := int64(0)
 	coinValueSupply := float64(0)
-	var chainErr error
-	var blockchainInfo *mutilchain.BlockchainInfo
-	//Get transactions total count
-	blockchainInfo, chainErr = exp.dataSource.MutilchainGetBlockchainInfo(mutilchain.TYPEBTC)
 	if chainErr != nil {
 		difficulty = blockData.Header.Difficulty
 		totalTransactionCount = exp.dataSource.MutilchainGetTransactionCount(mutilchain.TYPEBTC)
@@ -1075,46 +1103,12 @@ func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btc
 	hasSwapData := len(newBlockData.GroupSwaps) > 0
 	var swapsTotalContract, swapsTotalAmount, refundCount int64
 	if hasSwapData {
-		// Get atomic swaps summary info
 		swapsTotalContract, swapsTotalAmount, _, _ = exp.dataSource.GetAtomicSwapSummary()
-		// Get atomic swaps refund contract count
 		refundCount, _ = exp.dataSource.CountRefundContract()
 	}
-	//TODO: Open later
-	//totalVoutsCount := exp.dataSource.MutilchainGetTotalVoutsCount(mutilchain.TYPEBTC)
-	//totalAddressesCount := exp.dataSource.MutilchainGetTotalAddressesCount(mutilchain.TYPEBTC)
-	// err = exp.dataSource.SyncLast20BTCBlocks(blockData.Header.Height)
-	// if err != nil {
-	// 	log.Error(err)
-	// } else {
-	// 	log.Infof("Sync last 25 BTC Blocks successfully")
-	// }
-	//get and set 25 last block
-	blocks := exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPEBTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
-	// get last 5 block pools
-	last5BlockPools, err := exp.dataSource.GetLastMultichainPoolDataList(mutilchain.TYPEBTC, newBlockData.Height)
-	if err != nil {
-		log.Errorf("Get BTC last 10 block pools failed: ", err)
-	}
-	newBlockData.PoolDataList = last5BlockPools
-	log.Debugf("Get last 10 BTC Blocks pool successfully")
-	// get multichain stats from blockchair
-	totalAddresses := int64(0)
-	totalOutputs := int64(0)
+
 	volume24h := float64(0)
 	volume24hInt := int64(0)
-	nodes := int64(0)
-	avgTxFees24h := int64(0)
-	chainStats, err := exp.dataSource.GetMultichainStats(mutilchain.TYPEBTC)
-	if err != nil {
-		log.Warnf("BTC: Get multichain stats failed. %v", err)
-	} else {
-		totalAddresses = chainStats.HodlingAddresses
-		totalOutputs = chainStats.Outputs
-		nodes = chainStats.Nodes
-		avgTxFees24h = chainStats.AverageTransactionFee24h
-		log.Debugf("BTC: Get Multichain stats successfully")
-	}
 	if exp.xcBot != nil && exp.xcBot.State() != nil {
 		volumeBaseFloat := exp.xcBot.State().GetMutilchainVolumn(mutilchain.TYPEBTC)
 		price24h := exp.xcBot.State().BTCPrice
@@ -1123,36 +1117,27 @@ func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btc
 			volume24hInt = utils.BTCToSatoshi(volumeBaseFloat)
 		}
 	}
+
 	// Update pageData with block data and chain (home) info.
 	p := exp.BtcPageData
 	p.Lock()
 
-	// Store current block and blockchain data.
 	p.BlockInfo = newBlockData
 	p.BlockchainInfo = blockData.BlockchainInfo
 
-	// Update HomeInfo.
 	p.HomeInfo.HashRate = hashrate
-	// p.HomeInfo.HashRateChangeDay = 100 * (hashrate - last24HrHashRate) / last24HrHashRate
-	// p.HomeInfo.HashRateChangeMonth = 100 * (hashrate - lastMonthHashRate) / lastMonthHashRate
 	p.HomeInfo.CoinSupply = coinSupply
 	p.HomeInfo.CoinValueSupply = coinValueSupply
 	p.HomeInfo.Difficulty = difficulty
 	p.HomeInfo.TotalTransactions = totalTransactionCount
-	//p.HomeInfo.TotalOutputs = totalVoutsCount
-	//p.HomeInfo.TotalAddresses = totalAddressesCount
 	p.HomeInfo.TotalSize = chainSize
 	p.HomeInfo.FormattedSize = humanize.Bytes(uint64(chainSize))
 	p.HomeInfo.IdxInRewardWindow = int(newBlockData.Height%int64(exp.BtcChainParams.SubsidyReductionInterval)) + 1
 	p.HomeInfo.NBlockSubsidy.Total = blockData.ExtraInfo.NextBlockReward
 	p.HomeInfo.BlockReward = blockData.ExtraInfo.BlockReward
 	p.HomeInfo.SubsidyInterval = int64(exp.BtcChainParams.SubsidyReductionInterval)
-	p.HomeInfo.TotalAddresses = totalAddresses
-	p.HomeInfo.TotalOutputs = totalOutputs
-	p.HomeInfo.Nodes = nodes
 	p.HomeInfo.Volume24hFloat = volume24h
 	p.HomeInfo.Volume24h = volume24hInt
-	p.HomeInfo.TxFeeAvg24h = avgTxFees24h
 	if hasSwapData {
 		p.HomeInfo.SwapsTotalContract = swapsTotalContract
 		p.HomeInfo.SwapsTotalAmount = swapsTotalAmount
@@ -1160,12 +1145,28 @@ func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btc
 	}
 	p.BlockDetails = blocks
 	p.Unlock()
+
 	go func() {
 		select {
 		case exp.WsHub.HubRelay <- pstypes.HubMessage{Signal: sigNewBTCBlock}:
 		case <-time.After(time.Second * 10):
 			log.Errorf("sigNewBTCBlock send failed: Timeout waiting for WebsocketHub.")
 		}
+	}()
+
+	// Fetch external stats (blockchair) in background — do not block the critical path.
+	go func() {
+		chainStats, err := exp.dataSource.GetMultichainStats(mutilchain.TYPEBTC)
+		if err != nil {
+			log.Warnf("BTC: Get multichain stats failed. %v", err)
+			return
+		}
+		p.Lock()
+		p.HomeInfo.TotalAddresses = chainStats.HodlingAddresses
+		p.HomeInfo.TotalOutputs = chainStats.Outputs
+		p.HomeInfo.Nodes = chainStats.Nodes
+		p.HomeInfo.TxFeeAvg24h = chainStats.AverageTransactionFee24h
+		p.Unlock()
 	}()
 
 	go func(height int64) {
@@ -1351,31 +1352,60 @@ func (exp *ExplorerUI) XMRStore(blockData *xmrutil.BlockData) error {
 }
 
 func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltcwire.MsgBlock) error {
-	// Retrieve block data for the passed block hash.
-	newBlockData := exp.dataSource.GetLTCExplorerBlock(msgBlock.BlockHash().String())
-	// Use the latest block's blocktime to get the last 24hr timestamp.
-	// day := 24 * time.Hour
 	targetTimePerBlock := float64(exp.LtcChainParams.TargetTimePerBlock)
 
-	// Hashrate change over last day
-	// timestamp := newBlockData.BlockTime.T.Add(-day).Unix()
-	// last24hrDifficulty := exp.dataSource.MutilchainDifficulty(timestamp, mutilchain.TYPELTC)
-	// last24HrHashRate := dbtypes.CalculateHashRate(last24hrDifficulty, targetTimePerBlock)
+	// --- Fetch independent data sources concurrently ---
+	var newBlockData *types.BlockInfo
+	var blockchainInfo *mutilchain.BlockchainInfo
+	var chainErr error
+	var blocks []*types.BlockInfo
+	var last5BlockPools []*dbtypes.MultichainPoolDataItem
+	var poolErr error
 
-	// Hashrate change over last month
-	// timestamp = newBlockData.BlockTime.T.Add(-30 * day).Unix()
-	// lastMonthDifficulty := exp.dataSource.MutilchainDifficulty(timestamp, mutilchain.TYPELTC)
-	// lastMonthHashRate := dbtypes.CalculateHashRate(lastMonthDifficulty, targetTimePerBlock)
+	var wg sync.WaitGroup
 
+	// Fetch explorer block data
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		newBlockData = exp.dataSource.GetLTCExplorerBlock(msgBlock.BlockHash().String())
+	}()
+
+	// Fetch blockchain info
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		blockchainInfo, chainErr = exp.dataSource.MutilchainGetBlockchainInfo(mutilchain.TYPELTC)
+	}()
+
+	wg.Wait()
+
+	// These depend on newBlockData being ready
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		blocks = exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPELTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		last5BlockPools, poolErr = exp.dataSource.GetLastMultichainPoolDataList(mutilchain.TYPELTC, newBlockData.Height)
+		if poolErr != nil {
+			log.Errorf("Get LTC last 10 block pools failed: ", poolErr)
+		}
+	}()
+
+	wg.Wait()
+
+	newBlockData.PoolDataList = last5BlockPools
+
+	// Process blockchain info
 	totalTransactionCount := int64(0)
 	chainSize := int64(0)
 	difficulty := float64(0)
 	coinSupply := int64(0)
 	coinValueSupply := float64(0)
-	var chainErr error
-	var blockchainInfo *mutilchain.BlockchainInfo
-	//Get transactions total count
-	blockchainInfo, chainErr = exp.dataSource.MutilchainGetBlockchainInfo(mutilchain.TYPELTC)
 	if chainErr != nil {
 		difficulty = blockData.Header.Difficulty
 		totalTransactionCount = exp.dataSource.MutilchainGetTransactionCount(mutilchain.TYPELTC)
@@ -1395,44 +1425,12 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 	hasSwapData := len(newBlockData.GroupSwaps) > 0
 	var swapsTotalContract, swapsTotalAmount, refundCount int64
 	if hasSwapData {
-		// Get atomic swaps summary info
 		swapsTotalContract, swapsTotalAmount, _, _ = exp.dataSource.GetAtomicSwapSummary()
-		// Get atomic swaps refund contract count
 		refundCount, _ = exp.dataSource.CountRefundContract()
 	}
-	//TODO: Open later
-	//totalVoutsCount := exp.dataSource.MutilchainGetTotalVoutsCount(mutilchain.TYPELTC)
-	//totalAddressesCount := exp.dataSource.MutilchainGetTotalAddressesCount(mutilchain.TYPELTC)
-	// err = exp.dataSource.SyncLast20LTCBlocks(blockData.Header.Height)
-	// if err != nil {
-	// 	log.Error(err)
-	// }
-	//get and set 25 last block
-	blocks := exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPELTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
-	// get last 5 block pools
-	last5BlockPools, err := exp.dataSource.GetLastMultichainPoolDataList(mutilchain.TYPELTC, newBlockData.Height)
-	if err != nil {
-		log.Errorf("Get LTC last 10 block pools failed: ", err)
-	}
-	newBlockData.PoolDataList = last5BlockPools
-	log.Debugf("Get last 10 LTC Blocks pool successfully")
-	// get multichain stats from blockchair
-	totalAddresses := int64(0)
-	totalOutputs := int64(0)
+
 	volume24h := float64(0)
 	volume24hInt := int64(0)
-	nodes := int64(0)
-	avgTxFees24h := int64(0)
-	chainStats, err := exp.dataSource.GetMultichainStats(mutilchain.TYPELTC)
-	if err != nil {
-		log.Warnf("LTC: Get multichain stats failed. %v", err)
-	} else {
-		totalAddresses = chainStats.HodlingAddresses
-		totalOutputs = chainStats.Outputs
-		nodes = chainStats.Nodes
-		avgTxFees24h = chainStats.AverageTransactionFee24h
-		log.Debugf("LTC: Get Multichain stats successfully")
-	}
 	if exp.xcBot != nil && exp.xcBot.State() != nil {
 		volumeBaseFloat := exp.xcBot.State().GetMutilchainVolumn(mutilchain.TYPELTC)
 		price24h := exp.xcBot.State().LTCPrice
@@ -1441,36 +1439,27 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 			volume24hInt = utils.BTCToSatoshi(volumeBaseFloat)
 		}
 	}
+
 	// Update pageData with block data and chain (home) info.
 	p := exp.LtcPageData
 	p.Lock()
 
-	// Store current block and blockchain data.
 	p.BlockInfo = newBlockData
 	p.BlockchainInfo = blockData.BlockchainInfo
 
-	// Update HomeInfo.
 	p.HomeInfo.HashRate = hashrate
-	// p.HomeInfo.HashRateChangeDay = 100 * (hashrate - last24HrHashRate) / last24HrHashRate
-	// p.HomeInfo.HashRateChangeMonth = 100 * (hashrate - lastMonthHashRate) / lastMonthHashRate
 	p.HomeInfo.CoinSupply = coinSupply
 	p.HomeInfo.CoinValueSupply = coinValueSupply
 	p.HomeInfo.Difficulty = difficulty
 	p.HomeInfo.TotalTransactions = totalTransactionCount
-	//p.HomeInfo.TotalOutputs = totalVoutsCount
-	//p.HomeInfo.TotalAddresses = totalAddressesCount
 	p.HomeInfo.TotalSize = chainSize
 	p.HomeInfo.FormattedSize = humanize.Bytes(uint64(chainSize))
 	p.HomeInfo.IdxInRewardWindow = int(newBlockData.Height%int64(exp.LtcChainParams.SubsidyReductionInterval)) + 1
 	p.HomeInfo.NBlockSubsidy.Total = blockData.ExtraInfo.NextBlockReward
 	p.HomeInfo.BlockReward = blockData.ExtraInfo.BlockReward
 	p.HomeInfo.SubsidyInterval = int64(exp.LtcChainParams.SubsidyReductionInterval)
-	p.HomeInfo.TotalAddresses = totalAddresses
-	p.HomeInfo.TotalOutputs = totalOutputs
-	p.HomeInfo.Nodes = nodes
 	p.HomeInfo.Volume24hFloat = volume24h
 	p.HomeInfo.Volume24h = volume24hInt
-	p.HomeInfo.TxFeeAvg24h = avgTxFees24h
 	if hasSwapData {
 		p.HomeInfo.SwapsTotalContract = swapsTotalContract
 		p.HomeInfo.SwapsTotalAmount = swapsTotalAmount
@@ -1478,6 +1467,7 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 	}
 	p.BlockDetails = blocks
 	p.Unlock()
+
 	go func() {
 		select {
 		case exp.WsHub.HubRelay <- pstypes.HubMessage{Signal: sigNewLTCBlock}:
@@ -1485,6 +1475,22 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 			log.Errorf("sigNewLTCBlock send failed: Timeout waiting for WebsocketHub.")
 		}
 	}()
+
+	// Fetch external stats (blockchair) in background — do not block the critical path.
+	go func() {
+		chainStats, err := exp.dataSource.GetMultichainStats(mutilchain.TYPELTC)
+		if err != nil {
+			log.Warnf("LTC: Get multichain stats failed. %v", err)
+			return
+		}
+		p.Lock()
+		p.HomeInfo.TotalAddresses = chainStats.HodlingAddresses
+		p.HomeInfo.TotalOutputs = chainStats.Outputs
+		p.HomeInfo.Nodes = chainStats.Nodes
+		p.HomeInfo.TxFeeAvg24h = chainStats.AverageTransactionFee24h
+		p.Unlock()
+	}()
+
 	go func(height int64) {
 		p.sync24hMtx.Lock()
 		summary24h, err24h := exp.dataSource.SyncAndGet24hMetricsInfo(height, mutilchain.TYPELTC)
