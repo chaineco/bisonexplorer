@@ -53,76 +53,192 @@ func (pgb *ChainDB) CheckCreateBtcSwapsTable() (err error) {
 }
 
 // GetBTCSwapFullDataByContractTx returns atomic swap data for a BTC contract transaction.
-func (pgb *ChainDB) GetBTCSwapFullDataByContractTx(contractTx, groupTx string) (spends []*dbtypes.AtomicSwapTxData, err error) {
-	// get contract spends data
+func (pgb *ChainDB) GetBTCSwapFullDataByContractTx(contractTx, groupTx string) ([]*dbtypes.AtomicSwapTxData, error) {
 	rows, err := pgb.db.QueryContext(pgb.ctx, internal.SelectBTCAtomicSpendsByContractTx, contractTx, groupTx)
 	if err != nil {
 		return nil, err
 	}
-
 	defer rows.Close()
+
+	// Phase 1: Collect all rows from DB.
+	var spendList []*dbtypes.AtomicSwapTxData
 	for rows.Next() {
-		var spendData dbtypes.AtomicSwapTxData
-		err = rows.Scan(&spendData.Txid, &spendData.Vin, &spendData.Height, &spendData.Value, &spendData.LockTime)
-		if err != nil {
-			return
+		var s dbtypes.AtomicSwapTxData
+		if err = rows.Scan(&s.Txid, &s.Vin, &s.Height, &s.Value, &s.LockTime); err != nil {
+			return nil, err
 		}
-		spendData.LockTimeDisp = utils.DateTimeWithoutTimeZone(spendData.LockTime)
-		// get spend tx time
-		var txHash *btc_chainhash.Hash
-		txHash, err = btc_chainhash.NewHashFromStr(spendData.Txid)
-		if err != nil {
-			return
-		}
-		var txRaw *btcjson.TxRawResult
-		txRaw, err = btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
-			return pgb.BtcClient.GetRawTransactionVerbose(txHash)
-		})
-		if err != nil {
-			return
-		}
-		spendData.Time = txRaw.Time
-		spendData.TimeDisp = utils.DateTimeWithoutTimeZone(spendData.Time)
-		spends = append(spends, &spendData)
+		s.LockTimeDisp = utils.DateTimeWithoutTimeZone(s.LockTime)
+		spendList = append(spendList, &s)
 	}
-	err = rows.Err()
-	if err != nil {
-		return
+	if err = rows.Err(); err != nil {
+		return nil, err
 	}
-	return
+	if len(spendList) == 0 {
+		return spendList, nil
+	}
+
+	// Phase 2: Fetch all tx verbose results concurrently.
+	type txResult struct {
+		raw *btcjson.TxRawResult
+		err error
+	}
+	results := make([]txResult, len(spendList))
+	var wg sync.WaitGroup
+	for i, s := range spendList {
+		wg.Add(1)
+		go func(idx int, txid string) {
+			defer wg.Done()
+			txHash, err := btc_chainhash.NewHashFromStr(txid)
+			if err != nil {
+				results[idx] = txResult{nil, err}
+				return
+			}
+			txRaw, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+				return pgb.BtcClient.GetRawTransactionVerbose(txHash)
+			})
+			results[idx] = txResult{txRaw, err}
+		}(i, s.Txid)
+	}
+	wg.Wait()
+
+	for i, r := range results {
+		if r.err != nil {
+			return nil, r.err
+		}
+		spendList[i].Time = r.raw.Time
+		spendList[i].TimeDisp = utils.DateTimeWithoutTimeZone(r.raw.Time)
+	}
+	return spendList, nil
 }
 
 // GetBTCAtomicSwapTarget return atomic swap detail of BTC
 func (pgb *ChainDB) GetBTCAtomicSwapTarget(groupTx string) (*dbtypes.AtomicSwapForTokenData, error) {
-	targetData := &dbtypes.AtomicSwapForTokenData{
-		Contracts: make([]*dbtypes.AtomicSwapTxData, 0),
-		Results:   make([]*dbtypes.AtomicSwapTxData, 0),
-	}
-	// Get contract txs with
+	// Phase 1: Collect all contract rows from DB.
 	rows, err := pgb.db.QueryContext(pgb.ctx, internal.SelectBTCContractListByGroupTx, groupTx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	type contractRow struct {
+		Txid  string
+		Value int64
+	}
+	var contracts []contractRow
 	for rows.Next() {
-		var contractData dbtypes.AtomicSwapTxData
-		err = rows.Scan(&contractData.Txid, &contractData.Value)
-		if err != nil {
+		var c contractRow
+		if err = rows.Scan(&c.Txid, &c.Value); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		// get spends of contract
-		spendDatas, err := pgb.GetBTCSwapFullDataByContractTx(contractData.Txid, groupTx)
-		if err != nil {
-			return nil, err
+		contracts = append(contracts, c)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Phase 2: Process all contracts concurrently.
+	type contractResult struct {
+		contract *dbtypes.AtomicSwapTxData
+		spends   []*dbtypes.AtomicSwapTxData
+		err      error
+	}
+	results := make([]contractResult, len(contracts))
+	var wg sync.WaitGroup
+	for i, c := range contracts {
+		wg.Add(1)
+		go func(idx int, txid string, value int64) {
+			defer wg.Done()
+			// Get spends
+			spends, err := pgb.GetBTCSwapFullDataByContractTx(txid, groupTx)
+			if err != nil {
+				results[idx].err = err
+				return
+			}
+			results[idx].spends = spends
+
+			contractTxHash, err := btc_chainhash.NewHashFromStr(txid)
+			if err != nil {
+				results[idx].err = err
+				return
+			}
+
+			// Fetch verbose tx and raw tx concurrently
+			var contractTxRaw *btcjson.TxRawResult
+			var targetTxRaw *btcutil.Tx
+			var verboseErr, rawErr error
+			var inner sync.WaitGroup
+			inner.Add(2)
+			go func() {
+				defer inner.Done()
+				contractTxRaw, verboseErr = btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
+					return pgb.BtcClient.GetRawTransactionVerbose(contractTxHash)
+				})
+			}()
+			go func() {
+				defer inner.Done()
+				targetTxRaw, rawErr = btcrpcutils.WithTimeout(func() (*btcutil.Tx, error) {
+					return pgb.BtcClient.GetRawTransaction(contractTxHash)
+				})
+			}()
+			inner.Wait()
+
+			if verboseErr != nil {
+				results[idx].err = verboseErr
+				return
+			}
+			if rawErr != nil {
+				results[idx].err = rawErr
+				return
+			}
+
+			// Get block header (depends on verbose result)
+			targetBlockHash, err := btc_chainhash.NewHashFromStr(contractTxRaw.BlockHash)
+			if err != nil {
+				results[idx].err = err
+				return
+			}
+			targetBlockHeader, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
+				return pgb.BtcClient.GetBlockHeaderVerbose(targetBlockHash)
+			})
+			if err != nil {
+				results[idx].err = err
+				return
+			}
+
+			contractFees, err := txhelpers.CalculateBTCTxFee(pgb.BtcClient, targetTxRaw.MsgTx())
+			if err != nil {
+				results[idx].err = err
+				return
+			}
+
+			results[idx].contract = &dbtypes.AtomicSwapTxData{
+				Txid:     txid,
+				Value:    value,
+				Height:   int64(targetBlockHeader.Height),
+				Fees:     int64(contractFees),
+				Time:     contractTxRaw.Time,
+				TimeDisp: utils.DateTimeWithoutTimeZone(contractTxRaw.Time),
+			}
+		}(i, c.Txid, c.Value)
+	}
+	wg.Wait()
+
+	// Phase 3: Combine results in order.
+	targetData := &dbtypes.AtomicSwapForTokenData{
+		Contracts: make([]*dbtypes.AtomicSwapTxData, 0, len(contracts)),
+		Results:   make([]*dbtypes.AtomicSwapTxData, 0),
+	}
+	for _, r := range results {
+		if r.err != nil {
+			return nil, r.err
 		}
-		// check and insert to Source spends data
-		for _, spend := range spendDatas {
+		for _, spend := range r.spends {
 			exist := false
-			for index, existSpend := range targetData.Results {
+			for j, existSpend := range targetData.Results {
 				if spend.Txid == existSpend.Txid {
 					exist = true
 					existSpend.Value += spend.Value
-					targetData.Results[index] = existSpend
+					targetData.Results[j] = existSpend
 					break
 				}
 			}
@@ -130,47 +246,8 @@ func (pgb *ChainDB) GetBTCAtomicSwapTarget(groupTx string) (*dbtypes.AtomicSwapF
 				targetData.Results = append(targetData.Results, spend)
 			}
 		}
-
-		contractTxHash, err := btc_chainhash.NewHashFromStr(contractData.Txid)
-		if err != nil {
-			return nil, err
-		}
-		contractTxRaw, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
-			return pgb.BtcClient.GetRawTransactionVerbose(contractTxHash)
-		})
-		if err != nil {
-			return nil, err
-		}
-		targetTxRaw, err := btcrpcutils.WithTimeout(func() (*btcutil.Tx, error) {
-			return pgb.BtcClient.GetRawTransaction(contractTxHash)
-		})
-		if err != nil {
-			return nil, err
-		}
-		targetBlockHash, err := btc_chainhash.NewHashFromStr(contractTxRaw.BlockHash)
-		if err != nil {
-			return nil, err
-		}
-		targetBlockHeader, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
-			return pgb.BtcClient.GetBlockHeaderVerbose(targetBlockHash)
-		})
-		if err != nil {
-			return nil, err
-		}
-		contractData.Height = int64(targetBlockHeader.Height)
-		contractFees, err := txhelpers.CalculateBTCTxFee(pgb.BtcClient, targetTxRaw.MsgTx())
-		if err != nil {
-			return nil, err
-		}
-		contractData.Fees = int64(contractFees)
-		contractData.Time = contractTxRaw.Time
-		contractData.TimeDisp = utils.DateTimeWithoutTimeZone(contractData.Time)
-		targetData.TotalAmount += contractData.Value
-		targetData.Contracts = append(targetData.Contracts, &contractData)
-	}
-	err = rows.Err()
-	if err != nil {
-		return nil, err
+		targetData.TotalAmount += r.contract.Value
+		targetData.Contracts = append(targetData.Contracts, r.contract)
 	}
 	return targetData, nil
 }

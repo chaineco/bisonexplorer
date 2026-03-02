@@ -1037,8 +1037,6 @@ func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btc
 	var blockchainInfo *mutilchain.BlockchainInfo
 	var chainErr error
 	var blocks []*types.BlockInfo
-	var last5BlockPools []*dbtypes.MultichainPoolDataItem
-	var poolErr error
 
 	var wg sync.WaitGroup
 
@@ -1058,25 +1056,12 @@ func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btc
 
 	wg.Wait()
 
-	// These depend on newBlockData being ready
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		blocks = exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPEBTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
-	}()
+	if newBlockData == nil {
+		return fmt.Errorf("BTC: failed to get explorer block data")
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		last5BlockPools, poolErr = exp.dataSource.GetLastMultichainPoolDataList(mutilchain.TYPEBTC, newBlockData.Height)
-		if poolErr != nil {
-			log.Errorf("Get BTC last 10 block pools failed: ", poolErr)
-		}
-	}()
-
-	wg.Wait()
-
-	newBlockData.PoolDataList = last5BlockPools
+	// Fetch full blocks (depends on newBlockData being ready)
+	blocks = exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPEBTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
 
 	// Process blockchain info
 	totalTransactionCount := int64(0)
@@ -1154,7 +1139,18 @@ func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btc
 		}
 	}()
 
-	// Fetch external stats (blockchair) in background — do not block the critical path.
+	// Fetch external data in background — do not block the critical path.
+	go func() {
+		poolData, err := exp.dataSource.GetLastMultichainPoolDataList(mutilchain.TYPEBTC, int64(blockData.Header.Height))
+		if err != nil {
+			log.Warnf("BTC: Get last block pools failed. %v", err)
+		} else {
+			p.Lock()
+			p.BlockInfo.PoolDataList = poolData
+			p.Unlock()
+		}
+	}()
+
 	go func() {
 		chainStats, err := exp.dataSource.GetMultichainStats(mutilchain.TYPEBTC)
 		if err != nil {
@@ -1359,8 +1355,6 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 	var blockchainInfo *mutilchain.BlockchainInfo
 	var chainErr error
 	var blocks []*types.BlockInfo
-	var last5BlockPools []*dbtypes.MultichainPoolDataItem
-	var poolErr error
 
 	var wg sync.WaitGroup
 
@@ -1380,25 +1374,12 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 
 	wg.Wait()
 
-	// These depend on newBlockData being ready
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		blocks = exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPELTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
-	}()
+	if newBlockData == nil {
+		return fmt.Errorf("LTC: failed to get explorer block data")
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		last5BlockPools, poolErr = exp.dataSource.GetLastMultichainPoolDataList(mutilchain.TYPELTC, newBlockData.Height)
-		if poolErr != nil {
-			log.Errorf("Get LTC last 10 block pools failed: ", poolErr)
-		}
-	}()
-
-	wg.Wait()
-
-	newBlockData.PoolDataList = last5BlockPools
+	// Fetch full blocks (depends on newBlockData being ready)
+	blocks = exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPELTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
 
 	// Process blockchain info
 	totalTransactionCount := int64(0)
@@ -1476,7 +1457,18 @@ func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltc
 		}
 	}()
 
-	// Fetch external stats (blockchair) in background — do not block the critical path.
+	// Fetch external data in background — do not block the critical path.
+	go func() {
+		poolData, err := exp.dataSource.GetLastMultichainPoolDataList(mutilchain.TYPELTC, int64(blockData.Header.Height))
+		if err != nil {
+			log.Warnf("LTC: Get last block pools failed. %v", err)
+		} else {
+			p.Lock()
+			p.BlockInfo.PoolDataList = poolData
+			p.Unlock()
+		}
+	}()
+
 	go func() {
 		chainStats, err := exp.dataSource.GetMultichainStats(mutilchain.TYPELTC)
 		if err != nil {
