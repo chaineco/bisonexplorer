@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	apitypes "github.com/decred/dcrdata/v8/api/types"
@@ -471,13 +472,66 @@ func makeLTCExplorerBlockBasic(data *ltcjson.GetBlockVerboseTxResult) *exptypes.
 	return block
 }
 
+// prefetchLTCPrevTxs concurrently fetches all unique previous transactions
+// referenced by inputs across all transactions in a block. Returns a cache
+// map of txid -> TxRawResult for fast lookup, eliminating the N+1 RPC pattern.
+func prefetchLTCPrevTxs(client *ltcClient.Client, rawTxs []ltcjson.TxRawResult) map[string]*ltcjson.TxRawResult {
+	cache := make(map[string]*ltcjson.TxRawResult)
+
+	// Index block transactions by txid (intra-block references)
+	for i := range rawTxs {
+		cache[rawTxs[i].Txid] = &rawTxs[i]
+	}
+
+	// Collect unique prevout txids not already in the block
+	needed := make(map[string]struct{})
+	for _, tx := range rawTxs {
+		for _, vin := range tx.Vin {
+			if vin.IsCoinBase() || vin.Txid == "" {
+				continue
+			}
+			if _, ok := cache[vin.Txid]; !ok {
+				needed[vin.Txid] = struct{}{}
+			}
+		}
+	}
+
+	if len(needed) == 0 {
+		return cache
+	}
+
+	// Fetch concurrently with limited workers
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+
+	for txid := range needed {
+		wg.Add(1)
+		go func(tid string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			txResult, err := ltcrpcutils.GetRawTransactionByTxidStr(client, tid)
+			if err == nil && txResult != nil {
+				mu.Lock()
+				cache[tid] = txResult
+				mu.Unlock()
+			}
+		}(txid)
+	}
+
+	wg.Wait()
+	return cache
+}
+
 // makeLTCExplorerTxBasic creates a TxBasic from LTC transaction data.
-func makeLTCExplorerTxBasic(client *ltcClient.Client, data *ltcjson.TxRawResult, msgTx *ltcwire.MsgTx) *exptypes.TxBasic {
+// prevTxCache is an optional pre-fetched cache of previous transactions; if nil, RPCs are made per-input.
+func makeLTCExplorerTxBasic(client *ltcClient.Client, data *ltcjson.TxRawResult, msgTx *ltcwire.MsgTx, prevTxCache map[string]*ltcjson.TxRawResult) *exptypes.TxBasic {
 	isCoinbase := len(data.Vin) > 0 && data.Vin[0].IsCoinBase()
 	sent := txhelpers.TotalLTCVout(data.Vout).ToBTC()
 	fees := float64(0)
 	if !isCoinbase {
-		spent := LTCTotalTotalSpentVin(client, msgTx)
+		spent := LTCTotalTotalSpentVin(client, msgTx, prevTxCache)
 		spentCoin := utils.MultichainAtomicToCoin(spent, mutilchain.TYPELTC)
 		fees = spentCoin - sent
 	}
@@ -493,21 +547,31 @@ func makeLTCExplorerTxBasic(client *ltcClient.Client, data *ltcjson.TxRawResult,
 }
 
 // LTCTotalTotalSpentVin calculates the total spent value from transaction inputs.
-func LTCTotalTotalSpentVin(client *ltcClient.Client, msgTx *ltcwire.MsgTx) int64 {
+// prevTxCache is an optional pre-fetched cache; if nil or missing an entry, falls back to RPC.
+func LTCTotalTotalSpentVin(client *ltcClient.Client, msgTx *ltcwire.MsgTx, prevTxCache map[string]*ltcjson.TxRawResult) int64 {
 	var spent int64
 	for _, txin := range msgTx.TxIn {
-		txInResult, txinErr := ltcrpcutils.GetRawTransactionByTxidStr(client, txin.PreviousOutPoint.Hash.String())
-		if txinErr == nil {
-			unitAmount := dbtypes.GetLTCValueInFromRawTransction(txInResult, txin)
-			spent += unitAmount
+		txid := txin.PreviousOutPoint.Hash.String()
+		var txInResult *ltcjson.TxRawResult
+		if prevTxCache != nil {
+			txInResult = prevTxCache[txid]
 		}
+		if txInResult == nil {
+			var txinErr error
+			txInResult, txinErr = ltcrpcutils.GetRawTransactionByTxidStr(client, txid)
+			if txinErr != nil {
+				continue
+			}
+		}
+		unitAmount := dbtypes.GetLTCValueInFromRawTransction(txInResult, txin)
+		spent += unitAmount
 	}
 	return spent
 }
 
 // trimmedLTCTxInfoFromMsgTx creates a TrimmedTxInfo from LTC transaction data.
-func trimmedLTCTxInfoFromMsgTx(client *ltcClient.Client, txraw *ltcjson.TxRawResult, msgTx *ltcwire.MsgTx, params *ltc_chaincfg.Params) *exptypes.TrimmedTxInfo {
-	txBasic := makeLTCExplorerTxBasic(client, txraw, msgTx)
+func trimmedLTCTxInfoFromMsgTx(client *ltcClient.Client, txraw *ltcjson.TxRawResult, msgTx *ltcwire.MsgTx, params *ltc_chaincfg.Params, prevTxCache map[string]*ltcjson.TxRawResult) *exptypes.TrimmedTxInfo {
+	txBasic := makeLTCExplorerTxBasic(client, txraw, msgTx, prevTxCache)
 
 	tx := &exptypes.TrimmedTxInfo{
 		TxBasic:   txBasic,
@@ -569,6 +633,9 @@ func (pgb *ChainDB) GetLTCExplorerBlock(hash string) *exptypes.BlockInfo {
 		NextHash:      data.NextHash,
 	}
 
+	// Pre-fetch all previous transactions referenced by inputs in this block concurrently.
+	prevTxCache := prefetchLTCPrevTxs(pgb.LtcClient, data.RawTx)
+
 	txs := make([]*exptypes.TrimmedTxInfo, 0, block.Transactions)
 	txids := make([]string, 0)
 	totalSent := float64(0)
@@ -582,7 +649,7 @@ func (pgb *ChainDB) GetLTCExplorerBlock(hash string) *exptypes.BlockInfo {
 			log.Errorf("Unknown transaction %s: %v", tx.Txid, err)
 			return nil
 		}
-		exptx := trimmedLTCTxInfoFromMsgTx(pgb.LtcClient, tx, msgTx, pgb.ltcChainParams) // maybe pass tree
+		exptx := trimmedLTCTxInfoFromMsgTx(pgb.LtcClient, tx, msgTx, pgb.ltcChainParams, prevTxCache)
 		totalSent += exptx.Total
 		totalFees += exptx.FeeCoin
 		totalNumVins += int64(exptx.VinCount)
@@ -674,7 +741,7 @@ func (pgb *ChainDB) GetLTCExplorerTx(txid string) *exptypes.TxInfo {
 		return nil
 	}
 
-	txBasic := makeLTCExplorerTxBasic(pgb.LtcClient, txraw, msgTx)
+	txBasic := makeLTCExplorerTxBasic(pgb.LtcClient, txraw, msgTx, nil)
 	tx := &exptypes.TxInfo{
 		TxBasic:       txBasic,
 		BlockHash:     txraw.BlockHash,

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -452,13 +453,66 @@ func makeBTCExplorerBlockBasic(data *btcjson.GetBlockVerboseTxResult) *exptypes.
 	return block
 }
 
+// prefetchBTCPrevTxs concurrently fetches all unique previous transactions
+// referenced by inputs across all transactions in a block. Returns a cache
+// map of txid -> TxRawResult for fast lookup, eliminating the N+1 RPC pattern.
+func prefetchBTCPrevTxs(client *btcClient.Client, rawTxs []btcjson.TxRawResult) map[string]*btcjson.TxRawResult {
+	cache := make(map[string]*btcjson.TxRawResult)
+
+	// Index block transactions by txid (intra-block references)
+	for i := range rawTxs {
+		cache[rawTxs[i].Txid] = &rawTxs[i]
+	}
+
+	// Collect unique prevout txids not already in the block
+	needed := make(map[string]struct{})
+	for _, tx := range rawTxs {
+		for _, vin := range tx.Vin {
+			if vin.IsCoinBase() || vin.Txid == "" {
+				continue
+			}
+			if _, ok := cache[vin.Txid]; !ok {
+				needed[vin.Txid] = struct{}{}
+			}
+		}
+	}
+
+	if len(needed) == 0 {
+		return cache
+	}
+
+	// Fetch concurrently with limited workers
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+
+	for txid := range needed {
+		wg.Add(1)
+		go func(tid string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			txResult, err := btcrpcutils.GetRawTransactionByTxidStr(client, tid)
+			if err == nil && txResult != nil {
+				mu.Lock()
+				cache[tid] = txResult
+				mu.Unlock()
+			}
+		}(txid)
+	}
+
+	wg.Wait()
+	return cache
+}
+
 // makeBTCExplorerTxBasic creates a TxBasic from BTC transaction data.
-func makeBTCExplorerTxBasic(client *btcClient.Client, data *btcjson.TxRawResult, msgTx *btcwire.MsgTx) *exptypes.TxBasic {
+// prevTxCache is an optional pre-fetched cache of previous transactions; if nil, RPCs are made per-input.
+func makeBTCExplorerTxBasic(client *btcClient.Client, data *btcjson.TxRawResult, msgTx *btcwire.MsgTx, prevTxCache map[string]*btcjson.TxRawResult) *exptypes.TxBasic {
 	isCoinbase := len(data.Vin) > 0 && data.Vin[0].IsCoinBase()
 	sent := txhelpers.TotalBTCVout(data.Vout).ToBTC()
 	fees := float64(0)
 	if !isCoinbase {
-		spent := BTCTotalTotalSpentVin(client, msgTx)
+		spent := BTCTotalTotalSpentVin(client, msgTx, prevTxCache)
 		spentCoin := utils.MultichainAtomicToCoin(spent, mutilchain.TYPEBTC)
 		fees = spentCoin - sent
 	}
@@ -474,21 +528,31 @@ func makeBTCExplorerTxBasic(client *btcClient.Client, data *btcjson.TxRawResult,
 }
 
 // BTCTotalTotalSpentVin calculates the total spent value from transaction inputs.
-func BTCTotalTotalSpentVin(client *btcClient.Client, msgTx *btcwire.MsgTx) int64 {
+// prevTxCache is an optional pre-fetched cache; if nil or missing an entry, falls back to RPC.
+func BTCTotalTotalSpentVin(client *btcClient.Client, msgTx *btcwire.MsgTx, prevTxCache map[string]*btcjson.TxRawResult) int64 {
 	var spent int64
 	for _, txin := range msgTx.TxIn {
-		txInResult, txinErr := btcrpcutils.GetRawTransactionByTxidStr(client, txin.PreviousOutPoint.Hash.String())
-		if txinErr == nil {
-			unitAmount := dbtypes.GetBTCValueInFromRawTransction(txInResult, txin)
-			spent += unitAmount
+		txid := txin.PreviousOutPoint.Hash.String()
+		var txInResult *btcjson.TxRawResult
+		if prevTxCache != nil {
+			txInResult = prevTxCache[txid]
 		}
+		if txInResult == nil {
+			var txinErr error
+			txInResult, txinErr = btcrpcutils.GetRawTransactionByTxidStr(client, txid)
+			if txinErr != nil {
+				continue
+			}
+		}
+		unitAmount := dbtypes.GetBTCValueInFromRawTransction(txInResult, txin)
+		spent += unitAmount
 	}
 	return spent
 }
 
 // trimmedBTCTxInfoFromMsgTx creates a TrimmedTxInfo from BTC transaction data.
-func trimmedBTCTxInfoFromMsgTx(client *btcClient.Client, txraw *btcjson.TxRawResult, msgTx *btcwire.MsgTx, params *btc_chaincfg.Params) *exptypes.TrimmedTxInfo {
-	txBasic := makeBTCExplorerTxBasic(client, txraw, msgTx)
+func trimmedBTCTxInfoFromMsgTx(client *btcClient.Client, txraw *btcjson.TxRawResult, msgTx *btcwire.MsgTx, params *btc_chaincfg.Params, prevTxCache map[string]*btcjson.TxRawResult) *exptypes.TrimmedTxInfo {
+	txBasic := makeBTCExplorerTxBasic(client, txraw, msgTx, prevTxCache)
 
 	tx := &exptypes.TrimmedTxInfo{
 		TxBasic:   txBasic,
@@ -550,6 +614,9 @@ func (pgb *ChainDB) GetBTCExplorerBlock(hash string) *exptypes.BlockInfo {
 		NextHash:      data.NextHash,
 	}
 
+	// Pre-fetch all previous transactions referenced by inputs in this block concurrently.
+	prevTxCache := prefetchBTCPrevTxs(pgb.BtcClient, data.RawTx)
+
 	txs := make([]*exptypes.TrimmedTxInfo, 0, block.Transactions)
 	txIds := make([]string, 0)
 	totalSent := float64(0)
@@ -563,7 +630,7 @@ func (pgb *ChainDB) GetBTCExplorerBlock(hash string) *exptypes.BlockInfo {
 			log.Errorf("Unknown transaction %s: %v", tx.Txid, err)
 			return nil
 		}
-		exptx := trimmedBTCTxInfoFromMsgTx(pgb.BtcClient, tx, msgTx, pgb.btcChainParams) // maybe pass tree
+		exptx := trimmedBTCTxInfoFromMsgTx(pgb.BtcClient, tx, msgTx, pgb.btcChainParams, prevTxCache)
 		totalSent += exptx.Total
 		totalFees += exptx.FeeCoin
 		totalNumVins += int64(exptx.VinCount)
@@ -655,7 +722,7 @@ func (pgb *ChainDB) GetBTCExplorerTx(txid string) *exptypes.TxInfo {
 		return nil
 	}
 
-	txBasic := makeBTCExplorerTxBasic(pgb.BtcClient, txraw, msgTx)
+	txBasic := makeBTCExplorerTxBasic(pgb.BtcClient, txraw, msgTx, nil)
 	tx := &exptypes.TxInfo{
 		TxBasic:       txBasic,
 		BlockHash:     txraw.BlockHash,
