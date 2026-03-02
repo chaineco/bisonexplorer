@@ -9104,7 +9104,7 @@ func (pgb *ChainDB) txWithTicketPrice(txhash *chainhash.Hash) (*chainjson.TxRawR
 	// If the transaction is unconfirmed, the RPC client must provide the ticket
 	// price. Ensure the best block does not change between calls to
 	// getrawtransaction and getstakedifficulty.
-	ctx, cancel := context.WithTimeout(pgb.ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(pgb.ctx, 30*time.Second)
 	defer cancel()
 	blockHash, _, err := pgb.Client.GetBestBlock(ctx)
 	if err != nil {
@@ -9820,9 +9820,11 @@ func (pgb *ChainDB) UpdateChan() chan uint32 {
 // update channel clients have subscribed.
 func (pgb *ChainDB) SignalHeight(height uint32) {
 	for i, c := range pgb.heightClients {
+		timer := time.NewTimer(time.Minute)
 		select {
 		case c <- height:
-		case <-time.NewTimer(time.Minute).C:
+			timer.Stop()
+		case <-timer.C:
 			log.Criticalf("(*DBDataSaver).SignalHeight: heightClients[%d] timed out. Forcing a shutdown.", i)
 			pgb.shutdownDcrdata()
 		}

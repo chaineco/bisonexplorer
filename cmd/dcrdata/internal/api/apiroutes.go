@@ -252,7 +252,10 @@ func NewContext(cfg *AppContextConfig) *appContext {
 }
 
 func (c *appContext) updateNodeConnections() error {
-	nodeConnections, err := c.nodeClient.GetConnectionCount(context.TODO())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	nodeConnections, err := c.nodeClient.GetConnectionCount(ctx)
 	if err != nil {
 		// Assume there arr no connections if RPC had an error.
 		c.Status.SetConnections(0)
@@ -275,7 +278,7 @@ func (c *appContext) updateNodeConnections() error {
 	}
 
 	// Check the reconnected node's best block, and update Status.height.
-	_, nodeHeight, err := c.nodeClient.GetBestBlock(context.TODO())
+	_, nodeHeight, err := c.nodeClient.GetBestBlock(ctx)
 	if err != nil {
 		c.Status.SetReady(false)
 		return fmt.Errorf("node: getbestblock failed: %v", err)
