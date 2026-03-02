@@ -318,10 +318,38 @@ func (pgb *ChainDB) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltcwir
 	pgb.LtcBestBlock.Mtx.Unlock()
 	// Signal updates to any subscribed heightClients.
 	pgb.SignalLTCHeight(uint32(blockData.Header.Height))
-	// sync for ltc atomic swap
-	go pgb.SyncLTCAtomicSwapData(int64(blockData.Header.Height))
-	// sync for block txcount
-	go pgb.SyncLTCMetaInfo()
+	// sync for ltc atomic swap (with timeout)
+	go func(height int64) {
+		timer := time.NewTimer(5 * time.Minute)
+		defer timer.Stop()
+		done := make(chan struct{})
+		go func() {
+			pgb.SyncLTCAtomicSwapData(height)
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-timer.C:
+			log.Warnf("LTC: SyncLTCAtomicSwapData timed out after 5 minutes for height %d", height)
+		case <-pgb.ctx.Done():
+		}
+	}(int64(blockData.Header.Height))
+	// sync for block txcount (with timeout)
+	go func() {
+		timer := time.NewTimer(5 * time.Minute)
+		defer timer.Stop()
+		done := make(chan struct{})
+		go func() {
+			pgb.SyncLTCMetaInfo()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-timer.C:
+			log.Warnf("LTC: SyncLTCMetaInfo timed out after 5 minutes")
+		case <-pgb.ctx.Done():
+		}
+	}()
 	return nil
 }
 

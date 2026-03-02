@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 
 	btcjson "github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
@@ -305,23 +306,42 @@ func BTCTxPrevOutsByAddr(txAddrOuts BTCMempoolAddressStore, txnsStore BTCTxnsSto
 	return
 }
 
-// Get total of BTC for tx inputs
+// Get total of BTC for tx inputs (concurrent)
 func getBTCTotalInput(client *rpcclient.Client, tx *wire.MsgTx) (btcutil.Amount, error) {
-	var totalInput btcutil.Amount
-
-	for _, vin := range tx.TxIn {
-		prevTx, err := WithTimeout(func() (*btcjson.TxRawResult, error) {
-			return client.GetRawTransactionVerbose(&vin.PreviousOutPoint.Hash)
-		})
-		if err != nil {
-			return 0, err
-		}
-		// Get output of prev tx (UTXO)
-		prevOutput := prevTx.Vout[vin.PreviousOutPoint.Index]
-		satoshis := btcutil.Amount(prevOutput.Value * 1e8) // Chuyển từ BTC -> satoshis
-		totalInput += satoshis
+	if len(tx.TxIn) == 0 {
+		return 0, nil
 	}
 
+	type result struct {
+		amount btcutil.Amount
+		err    error
+	}
+	results := make([]result, len(tx.TxIn))
+	var wg sync.WaitGroup
+	for i, vin := range tx.TxIn {
+		wg.Add(1)
+		go func(idx int, hash chainhash.Hash, outIdx uint32) {
+			defer wg.Done()
+			prevTx, err := WithTimeout(func() (*btcjson.TxRawResult, error) {
+				return client.GetRawTransactionVerbose(&hash)
+			})
+			if err != nil {
+				results[idx] = result{0, err}
+				return
+			}
+			prevOutput := prevTx.Vout[outIdx]
+			results[idx] = result{btcutil.Amount(prevOutput.Value * 1e8), nil}
+		}(i, vin.PreviousOutPoint.Hash, vin.PreviousOutPoint.Index)
+	}
+	wg.Wait()
+
+	var totalInput btcutil.Amount
+	for _, r := range results {
+		if r.err != nil {
+			return 0, r.err
+		}
+		totalInput += r.amount
+	}
 	return totalInput, nil
 }
 

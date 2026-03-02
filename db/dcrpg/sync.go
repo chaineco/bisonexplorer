@@ -1687,7 +1687,10 @@ func (pgb *ChainDB) SyncMultichainMetaInfo(btcDisabled, ltcDisabled bool) (err e
 }
 
 func (pgb *ChainDB) SyncBTCMetaInfo() error {
-	pgb.multichainBtcMetaInfoSync.Lock()
+	if !pgb.multichainBtcMetaInfoSync.TryLock() {
+		log.Debugf("BTC meta info sync already running, skipping")
+		return nil
+	}
 	defer pgb.multichainBtcMetaInfoSync.Unlock()
 	log.Debugf("Start sync btc meta info for meta table")
 	// check current height in meta table
@@ -1730,7 +1733,10 @@ func (pgb *ChainDB) SyncBTCMetaInfo() error {
 }
 
 func (pgb *ChainDB) SyncLTCMetaInfo() error {
-	pgb.multichainLtcMetaInfoSync.Lock()
+	if !pgb.multichainLtcMetaInfoSync.TryLock() {
+		log.Debugf("LTC meta info sync already running, skipping")
+		return nil
+	}
 	defer pgb.multichainLtcMetaInfoSync.Unlock()
 	log.Debugf("Start sync ltc meta info for meta table")
 	// check current height in meta table

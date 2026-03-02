@@ -329,10 +329,38 @@ func (pgb *ChainDB) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btcwir
 	pgb.BtcBestBlock.Mtx.Unlock()
 	// Signal updates to any subscribed heightClients.
 	pgb.SignalBTCHeight(uint32(blockData.Header.Height))
-	// sync for btc atomic swap
-	go pgb.SyncBTCAtomicSwapData(int64(blockData.Header.Height))
-	// sync for block txcount
-	go pgb.SyncBTCMetaInfo()
+	// sync for btc atomic swap (with timeout)
+	go func(height int64) {
+		timer := time.NewTimer(5 * time.Minute)
+		defer timer.Stop()
+		done := make(chan struct{})
+		go func() {
+			pgb.SyncBTCAtomicSwapData(height)
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-timer.C:
+			log.Warnf("BTC: SyncBTCAtomicSwapData timed out after 5 minutes for height %d", height)
+		case <-pgb.ctx.Done():
+		}
+	}(int64(blockData.Header.Height))
+	// sync for block txcount (with timeout)
+	go func() {
+		timer := time.NewTimer(5 * time.Minute)
+		defer timer.Stop()
+		done := make(chan struct{})
+		go func() {
+			pgb.SyncBTCMetaInfo()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-timer.C:
+			log.Warnf("BTC: SyncBTCMetaInfo timed out after 5 minutes")
+		case <-pgb.ctx.Done():
+		}
+	}()
 	return nil
 }
 
