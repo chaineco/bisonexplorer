@@ -5,6 +5,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -46,6 +47,12 @@ func NewAPIRouter(app *appContext, JSONIndent string, useRealIP, compressLarge b
 		log.Debug("Enabling compressed responses for large JSON payload endpoints.")
 		compMiddleware = middleware.Compress(3)
 	}
+
+	// Rate limiter for address endpoints (10 req/s per IP).
+	addrReqPerSecLimit := 10.0
+	addrLimiter := m.NewLimiter(addrReqPerSecLimit)
+	addrLimiter.SetMessage(fmt.Sprintf(
+		"You have reached the maximum request limit (%g req/s)", addrReqPerSecLimit))
 
 	mux.Route("/block", func(r chi.Router) {
 		r.Get("/avg-block-time", app.getAvgBlockTime)
@@ -180,6 +187,7 @@ func NewAPIRouter(app *appContext, JSONIndent string, useRealIP, compressLarge b
 	const maxExistAddrs = 64
 
 	mux.Route("/address", func(r chi.Router) {
+		r.Use(m.Tollbooth(addrLimiter))
 		r.Route("/{address}", func(rd chi.Router) {
 			rd.With(m.AddressPathCtxN(maxExistAddrs)).Get("/exists", app.addressExists)
 			rd.Group(func(re chi.Router) {
@@ -358,6 +366,7 @@ func NewAPIRouter(app *appContext, JSONIndent string, useRealIP, compressLarge b
 			})
 		})
 		r.Route("/address", func(rt chi.Router) {
+			rt.Use(m.Tollbooth(addrLimiter))
 			rt.Route("/{address}", func(rd chi.Router) {
 				rd.Use(m.SimpleAddressCtx)
 				rd.Get("/totals", app.multichainAddressTotals)
@@ -420,7 +429,14 @@ func NewAPIRouter(app *appContext, JSONIndent string, useRealIP, compressLarge b
 func NewFileRouter(app *appContext, useRealIP bool) fileMux {
 	mux := stackedMux(useRealIP)
 
+	// Rate limiter for address file download endpoints (10 req/s per IP).
+	addrReqPerSecLimit := 10.0
+	addrLimiter := m.NewLimiter(addrReqPerSecLimit)
+	addrLimiter.SetMessage(fmt.Sprintf(
+		"You have reached the maximum request limit (%g req/s)", addrReqPerSecLimit))
+
 	mux.Route("/address", func(rd chi.Router) {
+		rd.Use(m.Tollbooth(addrLimiter))
 		// Allow browser cache for 3 minutes.
 		rd.Use(m.CacheControl(180))
 		// The carriage return option is handled on the path to facilitate more

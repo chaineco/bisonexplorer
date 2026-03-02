@@ -4238,10 +4238,10 @@ func (pgb *ChainDB) MutilchainAddressHistory(address string, N, offset int64,
 			return nil, nil, err
 		}
 	}
-	log.Infof("From DB: Address: %s: %d spent totalling %f %s, %d unspent totalling %f %s",
+	log.Debugf("From DB: Address: %s: %d spent totalling %f %s, %d unspent totalling %f %s",
 		address, balance.NumSpent, dbtypes.GetMutilchainCoinAmount(balance.TotalSpent, chainType), strings.ToUpper(chainType),
 		balance.NumUnspent, dbtypes.GetMutilchainCoinAmount(balance.TotalUnspent, chainType), strings.ToUpper(chainType))
-	log.Infof("From DB (%s): Receive count for address %s: count = %d at block %d.", strings.ToUpper(chainType),
+	log.Debugf("From DB (%s): Receive count for address %s: count = %d at block %d.", strings.ToUpper(chainType),
 		address, balance.NumSpent+balance.NumUnspent, height)
 
 	return addressRows, balance, nil
@@ -4342,10 +4342,10 @@ func (pgb *ChainDB) AddressHistory(address string, N, offset int64,
 		}
 	}
 
-	log.Infof("%s: %d spent totalling %f DCR, %d unspent totalling %f DCR",
+	log.Debugf("%s: %d spent totalling %f DCR, %d unspent totalling %f DCR",
 		address, balance.NumSpent, dcrutil.Amount(balance.TotalSpent).ToCoin(),
 		balance.NumUnspent, dcrutil.Amount(balance.TotalUnspent).ToCoin())
-	log.Infof("Receive count for address %s: count = %d at block %d.",
+	log.Debugf("Receive count for address %s: count = %d at block %d.",
 		address, balance.NumSpent+balance.NumUnspent, height)
 
 	return addressRows, balance, nil
