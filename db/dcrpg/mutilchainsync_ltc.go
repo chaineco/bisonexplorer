@@ -202,7 +202,10 @@ func (db *ChainDB) SyncLTCChainDB(client *ltcClient.Client, quit chan struct{},
 }
 
 func (pgb *ChainDB) SyncLast20LTCBlocks(nodeHeight int32) error {
-	pgb.ltc20BlocksSyncMtx.Lock()
+	if !pgb.ltc20BlocksSyncMtx.TryLock() {
+		log.Debugf("LTC last 20 blocks sync already running, skipping")
+		return nil
+	}
 	defer pgb.ltc20BlocksSyncMtx.Unlock()
 	// Total and rate statistics
 	var totalTxs, totalVins, totalVouts int64

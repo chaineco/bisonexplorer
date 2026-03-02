@@ -1029,9 +1029,11 @@ func (pgb *ChainDB) BTCDifficulty(timestamp int64) float64 {
 // SignalBTCHeight signals all height clients about a new BTC block height.
 func (pgb *ChainDB) SignalBTCHeight(height uint32) {
 	for i, c := range pgb.btcHeightClients {
+		timer := time.NewTimer(time.Minute)
 		select {
 		case c <- height:
-		case <-time.NewTimer(time.Minute).C:
+			timer.Stop()
+		case <-timer.C:
 			log.Criticalf("(*BTCDBDataSaver).SignalBTCHeight: btcHeightClients[%d] timed out. Forcing a shutdown.", i)
 			pgb.shutdownDcrdata()
 		}

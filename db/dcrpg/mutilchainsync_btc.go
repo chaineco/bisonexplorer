@@ -201,7 +201,10 @@ func (db *ChainDB) SyncBTCChainDB(client *btcClient.Client, quit chan struct{},
 }
 
 func (pgb *ChainDB) SyncLast20BTCBlocks(nodeHeight int32) error {
-	pgb.btc20BlocksSyncMtx.Lock()
+	if !pgb.btc20BlocksSyncMtx.TryLock() {
+		log.Debugf("BTC last 20 blocks sync already running, skipping")
+		return nil
+	}
 	defer pgb.btc20BlocksSyncMtx.Unlock()
 	//preprocessing, check from DB
 	// Total and rate statistics

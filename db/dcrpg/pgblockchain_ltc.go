@@ -1046,9 +1046,11 @@ func (pgb *ChainDB) LTCDifficulty(timestamp int64) float64 {
 // SignalLTCHeight signals all height clients about a new LTC block height.
 func (pgb *ChainDB) SignalLTCHeight(height uint32) {
 	for i, c := range pgb.ltcHeightClients {
+		timer := time.NewTimer(time.Minute)
 		select {
 		case c <- height:
-		case <-time.NewTimer(time.Minute).C:
+			timer.Stop()
+		case <-timer.C:
 			log.Criticalf("(*LTCDBDataSaver).SignalLTCHeight: ltcHeightClients[%d] timed out. Forcing a shutdown.", i)
 			pgb.shutdownDcrdata()
 		}
