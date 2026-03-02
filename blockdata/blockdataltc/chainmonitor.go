@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/decred/dcrdata/v8/mutilchain"
-	"github.com/decred/dcrdata/v8/mutilchain/ltcrpcutils"
-	"github.com/ltcsuite/ltcd/btcjson"
 	"github.com/ltcsuite/ltcd/chaincfg/chainhash"
 	"github.com/ltcsuite/ltcd/wire"
 )
@@ -40,47 +38,14 @@ func NewChainMonitor(ctx context.Context, collector *Collector, savers []BlockDa
 }
 
 func (p *chainMonitor) collect(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData, error) {
-	// getblock RPC
-	msgBlock, err := ltcrpcutils.WithTimeout(func() (*wire.MsgBlock, error) {
-		return p.collector.ltcdChainSvr.GetBlock(hash)
-	})
-	blockHeader, blockHeaderErr := ltcrpcutils.WithTimeout(func() (*btcjson.GetBlockHeaderVerboseResult, error) {
-		return p.collector.ltcdChainSvr.GetBlockHeaderVerbose(hash)
-	})
-	if err != nil || blockHeaderErr != nil {
-		return nil, nil, fmt.Errorf("failed to get block %v", hash)
-	}
-	height := int64(blockHeader.Height)
-	log.Infof("Block height %v connected. Collecting data...", height)
-
-	// Get node's best block height to see if the block for which we are
-	// collecting data is the best block.
-	chainHeight, err := ltcrpcutils.WithTimeout(func() (int64, error) {
-		return p.collector.ltcdChainSvr.GetBlockCount()
-	})
+	// CollectHash fetches the block, header, connection count, and blockchain
+	// info in one pass — no need to call GetBlock/GetBlockHeaderVerbose
+	// separately here, as that would duplicate the RPCs inside CollectBlockInfo.
+	blockData, msgBlock, err := p.collector.CollectHash(hash)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get chain height: %v", err)
+		return nil, nil, fmt.Errorf("blockdata.CollectHash(hash) failed: %v", err.Error())
 	}
-
-	// If new block height not equal to chain height, then we are behind
-	// on data collection, so specify the hash of the notified, skipping
-	// stake diff estimates and other stuff for web ui that is only
-	// relevant for the best block.
-	var blockData *BlockData
-	if chainHeight != height {
-		log.Debugf("Collecting data for block %v (%d), behind tip %d.",
-			hash, height, chainHeight)
-		blockData, _, err = p.collector.CollectHash(hash)
-		if err != nil {
-			return nil, nil, fmt.Errorf("blockdata.CollectHash(hash) failed: %v", err.Error())
-		}
-	} else {
-		blockData, _, err = p.collector.Collect()
-		if err != nil {
-			return nil, nil, fmt.Errorf("blockdata.Collect() failed: %v", err.Error())
-		}
-	}
-
+	log.Infof("Block height %v connected. Collecting data...", blockData.Header.Height)
 	return msgBlock, blockData, nil
 }
 
