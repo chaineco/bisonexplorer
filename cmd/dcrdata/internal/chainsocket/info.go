@@ -545,11 +545,17 @@ func (sk *MutilchainInfoSocket) UpdateMutilchainMempoolInfo(mempoolInfo *types.M
 func (sk *MutilchainInfoSocket) UpdateMutilchainHomeInfo(homeInfo *types.HomeInfo) {
 	switch sk.ChainType {
 	case mutilchain.TYPELTC:
+		sk.Exp.LtcPageData.Lock()
 		sk.Exp.LtcPageData.HomeInfo = homeInfo
+		sk.Exp.LtcPageData.Unlock()
 	case mutilchain.TYPEBTC:
+		sk.Exp.BtcPageData.Lock()
 		sk.Exp.BtcPageData.HomeInfo = homeInfo
+		sk.Exp.BtcPageData.Unlock()
 	case mutilchain.TYPEXMR:
+		sk.Exp.XmrPageData.Lock()
 		sk.Exp.XmrPageData.HomeInfo = homeInfo
+		sk.Exp.XmrPageData.Unlock()
 	default:
 		return
 	}
@@ -629,9 +635,15 @@ func (sk *MutilchainInfoSocket) getMempoolInfo() *types.MutilchainMempoolInfo {
 func (sk *MutilchainInfoSocket) getHomeInfo() *types.HomeInfo {
 	switch sk.ChainType {
 	case mutilchain.TYPELTC:
-		return sk.Exp.LtcPageData.HomeInfo
+		sk.Exp.LtcPageData.RLock()
+		hi := sk.Exp.LtcPageData.HomeInfo
+		sk.Exp.LtcPageData.RUnlock()
+		return hi
 	case mutilchain.TYPEBTC:
-		return sk.Exp.BtcPageData.HomeInfo
+		sk.Exp.BtcPageData.RLock()
+		hi := sk.Exp.BtcPageData.HomeInfo
+		sk.Exp.BtcPageData.RUnlock()
+		return hi
 	default:
 		return nil
 	}
