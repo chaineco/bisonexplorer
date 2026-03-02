@@ -691,15 +691,24 @@ func (pgb *ChainDB) GetLTCExplorerBlocks(start int, end int) []*exptypes.BlockBa
 	if start < end {
 		return nil
 	}
-	summaries := make([]*exptypes.BlockBasic, 0, start-end)
-	for i := start; i > end; i-- {
-		data := pgb.GetLTCBlockVerboseTx(i)
-		block := new(exptypes.BlockBasic)
-		if data != nil {
-			block = makeLTCExplorerBlockBasic(data)
-		}
-		summaries = append(summaries, block)
+	count := start - end
+	summaries := make([]*exptypes.BlockBasic, count)
+
+	// Fetch all blocks concurrently to avoid sequential RPC bottleneck.
+	var wg sync.WaitGroup
+	for idx := 0; idx < count; idx++ {
+		wg.Add(1)
+		go func(slot, height int) {
+			defer wg.Done()
+			data := pgb.GetLTCBlockVerboseTx(height)
+			block := new(exptypes.BlockBasic)
+			if data != nil {
+				block = makeLTCExplorerBlockBasic(data)
+			}
+			summaries[slot] = block
+		}(idx, start-idx)
 	}
+	wg.Wait()
 	return summaries
 }
 
