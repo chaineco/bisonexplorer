@@ -88,21 +88,27 @@ func (p *chainMonitor) collect(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData
 // and stores data for a block. ConnectBlock satisfies
 // notification.BlockHandler, and is registered as a handler in main.go.
 func (p *chainMonitor) ConnectBlock(header *mutilchain.LtcBlockHeader) error {
-	// Do not handle reorg and block connects simultaneously.
 	hash := header.Hash
-	p.reorgLock.Lock()
-	defer p.reorgLock.Unlock()
-	// Collect block data.
+
+	// Collect block data outside the lock — this is read-only RPC fetching
+	// and does not need reorg protection.
 	msgBlock, blockData, err := p.collect(&hash)
 	if err != nil {
 		return err
 	}
-	// Store block data with each saver.
+
+	// Only hold the lock during the store phase to prevent simultaneous
+	// reorg and block connect operations.
+	p.reorgLock.Lock()
+	defer p.reorgLock.Unlock()
+
+	// Store block data with each saver, with a per-saver timeout.
 	for _, s := range p.dataSavers {
 		if s != nil {
 			tStart := time.Now()
-			// Save data to wherever the saver wants to put it.
-			if err0 := s.LTCStore(blockData, msgBlock); err0 != nil {
+			if err0 := p.runSaverWithTimeout(func() error {
+				return s.LTCStore(blockData, msgBlock)
+			}); err0 != nil {
 				log.Errorf("(%v).Store failed: %v", reflect.TypeOf(s), err0)
 				err = err0
 			}
@@ -111,4 +117,25 @@ func (p *chainMonitor) ConnectBlock(header *mutilchain.LtcBlockHeader) error {
 		}
 	}
 	return err
+}
+
+// saverTimeout is the maximum time allowed for a single saver to complete.
+const saverTimeout = 10 * time.Minute
+
+// runSaverWithTimeout runs a saver function with a timeout. If the saver does
+// not complete within saverTimeout, an error is returned. The context is also
+// checked for cancellation.
+func (p *chainMonitor) runSaverWithTimeout(fn func() error) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- fn()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(saverTimeout):
+		return fmt.Errorf("LTC saver timed out after %v", saverTimeout)
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	}
 }
