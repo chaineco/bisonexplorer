@@ -1977,6 +1977,10 @@ func (exp *ExplorerUI) MutilchainMempool(w http.ResponseWriter, r *http.Request)
 	}
 	// Safely retrieve the inventory pointer, which can be reset in StoreMPData.
 	mempoolInfo := exp.MutilchainMempoolInfo(chainType)
+	if mempoolInfo == nil {
+		exp.StatusPage(w, defaultErrorCode, "mempool data not available", "", ExpStatusError)
+		return
+	}
 
 	// Prevent modifications to the shared inventory struct (e.g. in the
 	// MempoolMonitor) while marshaling the inventory.
