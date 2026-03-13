@@ -214,7 +214,10 @@ func MakeTxInsertStatement(checked bool, chainType string) string {
 }
 
 func CreateTransactionTableFunc(chainType string) string {
-	return fmt.Sprintf(CreateTransactionTable, chainType, chainType)
+	if chainType == mutilchain.TYPEXMR {
+		return CreateXmrTransactionTable
+	}
+	return fmt.Sprintf(CreateTransactionTable, chainType)
 }
 
 func CreateSelectTxHashsWithMinHeightQuery(chainType string) string {

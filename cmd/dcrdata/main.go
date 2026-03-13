@@ -1440,6 +1440,10 @@ func _main(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("check and create coin_age_bands table failed: %v", err)
 		}
+		err = chainDB.CheckAndCreateMcaSnapshotsTable()
+		if err != nil {
+			return fmt.Errorf("check and create mca_snapshots table failed: %v", err)
+		}
 		log.Infof("Begin checking and syncing coin age tables...")
 		err = syncCoinAgeData()
 		if err != nil {

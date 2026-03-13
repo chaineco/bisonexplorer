@@ -1045,6 +1045,20 @@ func (pgb *ChainDB) CheckAndCreateCoinAgeBandsTable() error {
 	return nil
 }
 
+func (pgb *ChainDB) CheckAndCreateMcaSnapshotsTable() error {
+	exists, err := TableExists(pgb.db, "mca_snapshots")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		log.Infof(`tables of %s empty. Creating tables...`, "mca_snapshots")
+		if err = createTable(pgb.db, "mca_snapshots", internal.CreateMeanCoinAgeTable); err != nil {
+			return fmt.Errorf("failed to create tables: %w", err)
+		}
+	}
+	return nil
+}
+
 // DropTables drops (deletes) all of the known dcrdata tables.
 func (pgb *ChainDB) DropTables() {
 	DropTables(pgb.db)
