@@ -982,20 +982,13 @@ func (pgb *ChainDB) CheckTableExist(table string) (bool, error) {
 }
 
 func (pgb *ChainDB) MutilchainCheckAndCreateTable(chainType string) error {
-	exists, err := TableExists(pgb.db, fmt.Sprintf("%sblocks", chainType))
-	if err != nil {
+	//Create type
+	if err := CreateMutilchainTypes(pgb.db, chainType); err != nil {
 		return err
 	}
-	if !exists {
-		//Create type
-		if err := CreateMutilchainTypes(pgb.db, chainType); err != nil {
-			return err
-		}
-		// Empty database (no blocks table). Proceed to setupTables.
-		log.Infof(`tables of %s empty. Creating tables...`, chainType)
-		if err = CreateMutilchainTables(pgb.db, chainType); err != nil {
-			return fmt.Errorf("failed to create tables: %w", err)
-		}
+	// Ensure all tables exist (idempotent, uses CREATE TABLE IF NOT EXISTS).
+	if err := CreateMutilchainTables(pgb.db, chainType); err != nil {
+		return fmt.Errorf("failed to create tables: %w", err)
 	}
 	return nil
 }

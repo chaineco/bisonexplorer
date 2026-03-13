@@ -1350,6 +1350,9 @@ func (exp *ExplorerUI) Blocks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, s := range blocks {
+		if s == nil || s.BlockBasic == nil {
+			continue
+		}
 		blockStatus, err := exp.dataSource.BlockStatus(s.Hash)
 		if exp.timeoutErrorPage(w, err, "BlockStatus") {
 			return
@@ -3707,7 +3710,7 @@ func (exp *ExplorerUI) GetDecredParamsData() *types.ChainParamData {
 	homeInfo := exp.pageData.HomeInfo
 	blockInfo := exp.pageData.BlockInfo
 	exp.pageData.RUnlock()
-	if homeInfo != nil && blockInfo != nil {
+	if homeInfo != nil && blockInfo != nil && blockInfo.BlockBasic != nil {
 		blockTime := blockInfo.BlockTime.UNIX()
 		res.NextBlockReward = homeInfo.NBlockSubsidy.Total
 		x := (int64(homeInfo.Params.RewardWindowSize) - int64(homeInfo.IdxInRewardWindow)) * homeInfo.Params.BlockTime
