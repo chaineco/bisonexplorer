@@ -3705,13 +3705,16 @@ func (exp *ExplorerUI) GetDecredParamsData() *types.ChainParamData {
 	}
 	exp.pageData.RLock()
 	homeInfo := exp.pageData.HomeInfo
-	blockTime := exp.pageData.BlockInfo.BlockTime.UNIX()
+	blockInfo := exp.pageData.BlockInfo
 	exp.pageData.RUnlock()
-	res.NextBlockReward = homeInfo.NBlockSubsidy.Total
-	x := (int64(homeInfo.Params.RewardWindowSize) - int64(homeInfo.IdxInRewardWindow)) * homeInfo.Params.BlockTime
-	allsecs := int64(time.Duration(x).Seconds())
-	res.NextTime = uint64(blockTime + allsecs)
-	res.RemainingBlocks = homeInfo.Params.RewardWindowSize - int64(homeInfo.IdxInRewardWindow)
+	if homeInfo != nil && blockInfo != nil {
+		blockTime := blockInfo.BlockTime.UNIX()
+		res.NextBlockReward = homeInfo.NBlockSubsidy.Total
+		x := (int64(homeInfo.Params.RewardWindowSize) - int64(homeInfo.IdxInRewardWindow)) * homeInfo.Params.BlockTime
+		allsecs := int64(time.Duration(x).Seconds())
+		res.NextTime = uint64(blockTime + allsecs)
+		res.RemainingBlocks = homeInfo.Params.RewardWindowSize - int64(homeInfo.IdxInRewardWindow)
+	}
 	return res
 }
 
