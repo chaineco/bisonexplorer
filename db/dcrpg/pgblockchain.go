@@ -5695,17 +5695,16 @@ func (pgb *ChainDB) anonymitySet(charts *cache.ChartData) (*sql.Rows, func(), er
 	go func() {
 		// 1) Quick check under lock to find missing height, then release lock
 		pgb.mixSetDiffsMtx.Lock()
-		missing := int32(-1)
+		hasMissing := false
 		for h := nextDataHeight; h <= targetDataHeight; h++ {
 			if _, found := pgb.mixSetDiffs[h]; !found {
-				// preserve the height you want to query; original code used nextDataHeight-1
-				missing = int32(nextDataHeight) - 1
+				hasMissing = true
 				break
 			}
 		}
 		pgb.mixSetDiffsMtx.Unlock()
 
-		if missing == -1 {
+		if !hasMissing {
 			// nothing to query
 			select {
 			case resultCh <- result{rows: nil, cancel: func() {}, err: nil}:
@@ -5716,8 +5715,9 @@ func (pgb *ChainDB) anonymitySet(charts *cache.ChartData) (*sql.Rows, func(), er
 		}
 
 		// 2) Do the DB work outside the mutex
-		log.Debugf("Mixed set deltas not available at height %d. Querying DB...", missing)
-		rows, cancel, err := pgb.retrieveAnonymitySet(missing)
+		queryFrom := int32(nextDataHeight) - 1
+		log.Debugf("Mixed set deltas not available. Querying DB from height %d...", queryFrom)
+		rows, cancel, err := pgb.retrieveAnonymitySet(queryFrom)
 
 		res := result{rows: rows, cancel: cancel, err: err}
 		// 3) Try to send result, but if parent already timed out (done closed), cleanup

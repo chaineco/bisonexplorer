@@ -1725,8 +1725,9 @@ func _main(ctx context.Context) error {
 		//finish handler xmr chart data
 		xmrBlocksBehind := int64(xmrHeight) - int64(xmrHeightFromDB)
 		if xmrBlocksBehind < 0 {
-			return fmt.Errorf("XMR: Node is still syncing. Node height = %d, "+
-				"DB height = %d", xmrHeight, xmrHeightFromDB)
+			log.Warnf("XMR: Node is still syncing or not available. Node height = %d, "+
+				"DB height = %d. Skipping XMR sync.", xmrHeight, xmrHeightFromDB)
+			xmrBlocksBehind = 0
 		}
 
 		// Check for missing indexes.
@@ -1901,8 +1902,9 @@ func _main(ctx context.Context) error {
 			//finish handler ltc chart data
 			ltcBlocksBehind := int64(ltcHeight) - int64(ltcHeightFromDB)
 			if ltcBlocksBehind < 0 {
-				return fmt.Errorf("LTC Node is still syncing. Node height = %d, "+
-					"DB height = %d", ltcHeight, ltcHeightFromDB)
+				log.Warnf("LTC: Node is still syncing or not available. Node height = %d, "+
+					"DB height = %d. Skipping LTC sync.", ltcHeight, ltcHeightFromDB)
+				ltcBlocksBehind = 0
 			}
 
 			// Check for missing indexes.
@@ -2044,8 +2046,9 @@ func _main(ctx context.Context) error {
 			//finish handler btc chart data
 			btcBlocksBehind := int64(btcHeight) - int64(btcHeightFromDB)
 			if btcBlocksBehind < 0 {
-				return fmt.Errorf("BTC Node is still syncing. Node height = %d, "+
-					"DB height = %d", btcHeight, btcHeightFromDB)
+				log.Warnf("BTC: Node is still syncing or not available. Node height = %d, "+
+					"DB height = %d. Skipping BTC sync.", btcHeight, btcHeightFromDB)
+				btcBlocksBehind = 0
 			}
 
 			// Check for missing indexes.
