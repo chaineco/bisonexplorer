@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -17,7 +16,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrdata/v8/semver"
 	"github.com/decred/dcrdata/v8/txhelpers"
 )
 
@@ -26,7 +24,7 @@ type MempoolGetter interface {
 }
 
 type BlockGetter interface {
-	GetBestBlock() (*chainhash.Hash, int64, error)
+	GetBlockCount() (int64, error)
 	GetBlockHash(blockHeight int64) (*chainhash.Hash, error)
 	GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error)
 }
@@ -93,15 +91,8 @@ func NewAsyncTxClient(c *rpcclient.Client) *AsyncTxClient {
 	return &AsyncTxClient{c}
 }
 
-// Any of the following dcrd RPC API versions are deemed compatible with
-// dcrdata.
-var compatibleChainServerAPIs = []semver.Semver{
-	semver.NewSemver(1, 0, 0),
-	semver.NewSemver(2, 0, 0), // removed methods we no longer use i.e. searchrawtransactions
-}
-
-// DefaultRPCTimeout is the timeout for individual RPC calls to btcd.
-// If btcd becomes unresponsive, calls will fail after this duration
+// DefaultRPCTimeout is the timeout for individual RPC calls to bitcoind.
+// If bitcoind becomes unresponsive, calls will fail after this duration
 // instead of blocking indefinitely.
 var DefaultRPCTimeout = 30 * time.Second
 
@@ -140,69 +131,46 @@ func WithTimeout[T any](fn func() (T, error)) (T, error) {
 	}
 }
 
-// ConnectNodeRPC attempts to create a new websocket connection to a dcrd node,
-// with the given credentials and optional notification handlers.
-func ConnectNodeRPC(host, user, pass, cert string, disableTLS, disableReconnect bool,
-	ntfnHandlers ...*rpcclient.NotificationHandlers) (*rpcclient.Client, semver.Semver, error) {
-	var btcdCerts []byte
-	var err error
-	var nodeVer semver.Semver
-	if !disableTLS {
-		btcdCerts, err = os.ReadFile(cert)
-		if err != nil {
-			log.Errorf("Failed to read dcrd cert file at %s: %s\n",
-				cert, err.Error())
-			return nil, nodeVer, err
-		}
-		log.Debugf("Attempting to connect to dcrd RPC %s as user %s "+
-			"using certificate located in %s",
-			host, user, cert)
-	} else {
-		log.Debugf("Attempting to connect to dcrd RPC %s as user %s (no TLS)",
-			host, user)
+// ConnectNodeRPC creates an HTTP JSON-RPC connection to a bitcoind node.
+func ConnectNodeRPC(host, user, pass string) (*rpcclient.Client, error) {
+	log.Infof("Connecting to bitcoind RPC %s as user %s (HTTP mode)", host, user)
+
+	connCfg := &rpcclient.ConnConfig{
+		Host:         host,
+		User:         user,
+		Pass:         pass,
+		HTTPPostMode: true,
+		DisableTLS:   true,
 	}
 
-	//connect with btcd
-	connCfgDaemon := &rpcclient.ConnConfig{
-		Host:                 host,
-		Endpoint:             "ws", // websocket
-		User:                 user,
-		Pass:                 pass,
-		Certificates:         btcdCerts,
-		DisableTLS:           disableTLS,
-		DisableAutoReconnect: disableReconnect,
-	}
-	var ntfnHdlrs *rpcclient.NotificationHandlers
-	if len(ntfnHandlers) > 0 {
-		if len(ntfnHandlers) > 1 {
-			return nil, nodeVer, fmt.Errorf("invalid notification handler argument")
-		}
-		ntfnHdlrs = ntfnHandlers[0]
-	}
-	btcdClient, err := rpcclient.New(connCfgDaemon, ntfnHdlrs)
+	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
-		return nil, nodeVer, fmt.Errorf("Failed to start btcd RPC client: %s", err.Error())
+		return nil, fmt.Errorf("failed to create BTC RPC client: %w", err)
 	}
 
-	// // Ensure the RPC server has a compatible API version.
-	ver, err := btcdClient.Version()
+	// Verify connection by getting block count
+	count, err := client.GetBlockCount()
 	if err != nil {
-		log.Error("Unable to get RPC version: ", err)
-		return nil, nodeVer, fmt.Errorf("unable to get node RPC version")
+		client.Shutdown()
+		return nil, fmt.Errorf("failed to connect to bitcoind: %w", err)
 	}
 
-	btcdVer := ver["btcdjsonrpcapi"]
-	nodeVer = semver.NewSemver(btcdVer.Major, btcdVer.Minor, btcdVer.Patch)
+	log.Infof("Connected to bitcoind at %s, block height: %d", host, count)
+	return client, nil
+}
 
-	// Check if the dcrd RPC API version is compatible with dcrdata.
-	isAPICompat := semver.AnyCompatible(compatibleChainServerAPIs, nodeVer)
-	if !isAPICompat {
-		return nil, nodeVer, fmt.Errorf("Node JSON-RPC server does not have "+
-			"a compatible API version. Advertises %v but requires one of: %v",
-			nodeVer, compatibleChainServerAPIs)
+// GetBestBlock returns the best block hash and height using GetBlockCount + GetBlockHash.
+// This replaces the btcd-specific GetBestBlock() RPC which is not available in bitcoind.
+func GetBestBlock(client *rpcclient.Client) (*chainhash.Hash, int64, error) {
+	count, err := client.GetBlockCount()
+	if err != nil {
+		return nil, 0, fmt.Errorf("GetBlockCount failed: %w", err)
 	}
-
-	return btcdClient, nodeVer, nil
+	hash, err := client.GetBlockHash(count)
+	if err != nil {
+		return nil, 0, fmt.Errorf("GetBlockHash(%d) failed: %w", count, err)
+	}
+	return hash, count, nil
 }
 
 func GetRawTransactionByTxidStr(client TransactionGetter, txid string) (*btcjson.TxRawResult, error) {
@@ -566,7 +534,7 @@ type MempoolTxGetter interface {
 	MempoolGetter
 	RawTransactionGetter
 	VerboseTransactionPromiseGetter
-	GetBestBlock() (*chainhash.Hash, int32, error)
+	GetBlockCount() (int64, error)
 }
 
 // UnconfirmedTxnsForAddress returns the chainhash.Hash of all transactions in
