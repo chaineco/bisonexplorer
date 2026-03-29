@@ -50,11 +50,11 @@ func (db *ChainDB) SyncBTCChainDB(client *btcClient.Client, quit chan struct{},
 		height int32
 	}
 	bestBlockRes, err := btcrpcutils.WithTimeout(func() (*btcBestBlockResult, error) {
-		hash, height, err := client.GetBestBlock()
+		hash, height, err := btcrpcutils.GetBestBlock(client)
 		if err != nil {
 			return nil, err
 		}
-		return &btcBestBlockResult{hash, height}, nil
+		return &btcBestBlockResult{hash, int32(height)}, nil
 	})
 	if err != nil {
 		return -1, fmt.Errorf("GetBestBlock BTC failed: %v", err)
@@ -158,11 +158,11 @@ func (db *ChainDB) SyncBTCChainDB(client *btcClient.Client, quit chan struct{},
 
 		// update height, the end condition for the loop
 		bestBlockUpd, err := btcrpcutils.WithTimeout(func() (*btcBestBlockResult, error) {
-			hash, height, err := client.GetBestBlock()
+			hash, height, err := btcrpcutils.GetBestBlock(client)
 			if err != nil {
 				return nil, err
 			}
-			return &btcBestBlockResult{hash, height}, nil
+			return &btcBestBlockResult{hash, int32(height)}, nil
 		})
 		if err != nil {
 			return ib, fmt.Errorf("BTC: GetBestBlock failed: %v", err)
@@ -261,11 +261,11 @@ func (pgb *ChainDB) SyncLast20BTCBlocks(nodeHeight int32) error {
 			height int32
 		}
 		bestBlockUpd, err := btcrpcutils.WithTimeout(func() (*btcBestBlockResult, error) {
-			hash, height, err := pgb.BtcClient.GetBestBlock()
+			hash, height, err := btcrpcutils.GetBestBlock(pgb.BtcClient)
 			if err != nil {
 				return nil, err
 			}
-			return &btcBestBlockResult{hash, height}, nil
+			return &btcBestBlockResult{hash, int32(height)}, nil
 		})
 		if err != nil {
 			return fmt.Errorf("BTC: GetBestBlock failed: %v", err)

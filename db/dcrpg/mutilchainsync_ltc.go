@@ -50,11 +50,11 @@ func (db *ChainDB) SyncLTCChainDB(client *ltcClient.Client, quit chan struct{},
 		height int32
 	}
 	bestBlockRes, err := ltcrpcutils.WithTimeout(func() (*ltcBestBlockResult, error) {
-		hash, height, err := client.GetBestBlock()
+		hash, height, err := ltcrpcutils.GetBestBlock(client)
 		if err != nil {
 			return nil, err
 		}
-		return &ltcBestBlockResult{hash, height}, nil
+		return &ltcBestBlockResult{hash, int32(height)}, nil
 	})
 	if err != nil {
 		return -1, fmt.Errorf("GetBestBlock LTC failed: %v", err)
@@ -158,11 +158,11 @@ func (db *ChainDB) SyncLTCChainDB(client *ltcClient.Client, quit chan struct{},
 
 		// update height, the end condition for the loop
 		bestBlockUpd, err := ltcrpcutils.WithTimeout(func() (*ltcBestBlockResult, error) {
-			hash, height, err := client.GetBestBlock()
+			hash, height, err := ltcrpcutils.GetBestBlock(client)
 			if err != nil {
 				return nil, err
 			}
-			return &ltcBestBlockResult{hash, height}, nil
+			return &ltcBestBlockResult{hash, int32(height)}, nil
 		})
 		if err != nil {
 			return ib, fmt.Errorf("GetBestBlock failed: %v", err)
@@ -262,11 +262,11 @@ func (pgb *ChainDB) SyncLast20LTCBlocks(nodeHeight int32) error {
 			height int32
 		}
 		bestBlockUpd, err := ltcrpcutils.WithTimeout(func() (*ltcBestBlockResult, error) {
-			hash, height, err := pgb.LtcClient.GetBestBlock()
+			hash, height, err := ltcrpcutils.GetBestBlock(pgb.LtcClient)
 			if err != nil {
 				return nil, err
 			}
-			return &ltcBestBlockResult{hash, height}, nil
+			return &ltcBestBlockResult{hash, int32(height)}, nil
 		})
 		if err != nil {
 			return fmt.Errorf("LTC: GetBestBlock failed: %v", err)

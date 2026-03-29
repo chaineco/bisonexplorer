@@ -1064,11 +1064,11 @@ func (pgb *ChainDB) GetBTCBestBlock() error {
 		height int32
 	}
 	result, err := btcrpcutils.WithTimeout(func() (*bestBlockResult, error) {
-		hash, height, err := pgb.BtcClient.GetBestBlock()
+		hash, height, err := btcrpcutils.GetBestBlock(pgb.BtcClient)
 		if err != nil {
 			return nil, err
 		}
-		return &bestBlockResult{hash, height}, nil
+		return &bestBlockResult{hash, int32(height)}, nil
 	})
 	btcTime := int64(0)
 	if err != nil {

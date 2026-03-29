@@ -1081,11 +1081,11 @@ func (pgb *ChainDB) GetLTCBestBlock() error {
 		height int32
 	}
 	result, err := ltcrpcutils.WithTimeout(func() (*bestBlockResult, error) {
-		hash, height, err := pgb.LtcClient.GetBestBlock()
+		hash, height, err := ltcrpcutils.GetBestBlock(pgb.LtcClient)
 		if err != nil {
 			return nil, err
 		}
-		return &bestBlockResult{hash, height}, nil
+		return &bestBlockResult{hash, int32(height)}, nil
 	})
 	ltcTime := int64(0)
 	if err != nil {
