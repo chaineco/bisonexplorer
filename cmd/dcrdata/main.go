@@ -60,7 +60,6 @@ import (
 
 	"github.com/decred/dcrdata/cmd/dcrdata/internal/api"
 	"github.com/decred/dcrdata/cmd/dcrdata/internal/api/insight"
-	"github.com/decred/dcrdata/cmd/dcrdata/internal/chainsocket"
 	"github.com/decred/dcrdata/cmd/dcrdata/internal/explorer"
 	mw "github.com/decred/dcrdata/cmd/dcrdata/internal/middleware"
 	notify "github.com/decred/dcrdata/cmd/dcrdata/internal/notification"
@@ -311,32 +310,27 @@ func _main(ctx context.Context) error {
 	if !ltcDisabled {
 		//Start create rpcclient
 		ltcNotifier = notify.NewLtcNotifier()
-		var ltcNodeVer semver.Semver
 		var ltcConnectErr error
-		ltcdClient, ltcNodeVer, ltcConnectErr = connectLTCNodeRPC(cfg, ltcNotifier.LtcdHandlers())
+		ltcdClient, ltcConnectErr = connectLTCNodeRPC(cfg)
 		if ltcConnectErr != nil || ltcdClient == nil {
-			return fmt.Errorf("Connection to ltcd failed: %v", ltcConnectErr)
+			return fmt.Errorf("Connection to litecoind failed: %v", ltcConnectErr)
 		}
-		ltcCurnet, ltcErr := ltcdClient.GetCurrentNet()
+		ltcChainInfo, ltcErr := ltcdClient.GetBlockChainInfo()
 		if ltcErr != nil {
-			return fmt.Errorf("Unable to get current network from ltcd: %v", ltcErr)
+			return fmt.Errorf("Unable to get blockchain info from litecoind: %v", ltcErr)
 		}
 		chainDB.LtcClient = ltcdClient
-		log.Infof("Connected to ltcd (JSON-RPC API v%s) on %v", ltcNodeVer.String(), ltcCurnet.String())
-
-		if ltcCurnet != ltcActiveNet.Net {
-			log.Criticalf("LTCD: Network of connected node, %s, does not match expected "+
-				"network, %s.", ltcActiveNet.Net, ltcCurnet)
-			return fmt.Errorf("expected network %s, got %s", ltcActiveNet.Net, ltcCurnet)
-		}
+		ltcNotifier.SetClient(ltcdClient)
+		log.Infof("Connected to litecoind on %v", ltcChainInfo.Chain)
 
 		var ltcHash *ltcchainhash.Hash
-		ltcHash, ltcHeight, err = ltcdClient.GetBestBlock()
+		ltcHash, ltcHeight64, ltcErr := ltcrpcutils.GetBestBlock(ltcdClient)
 		ltcTime := int64(0)
-		if err != nil {
-			return fmt.Errorf("Unable to get block from ltc node: %v", err)
+		if ltcErr != nil {
+			return fmt.Errorf("Unable to get block from ltc node: %v", ltcErr)
 		}
-		blockhash, err := ltcdClient.GetBlockHash(int64(ltcHeight))
+		ltcHeight = int32(ltcHeight64)
+		blockhash, err := ltcdClient.GetBlockHash(ltcHeight64)
 		if err == nil {
 			blockRst, rstErr := ltcdClient.GetBlockVerbose(blockhash)
 			if rstErr == nil {
@@ -345,7 +339,7 @@ func _main(ctx context.Context) error {
 		}
 		//create bestblock object
 		bestBlock := &dcrpg.MutilchainBestBlock{
-			Height: int64(ltcHeight),
+			Height: ltcHeight64,
 			Hash:   ltcHash.String(),
 			Time:   ltcTime,
 		}
@@ -355,31 +349,27 @@ func _main(ctx context.Context) error {
 	if !btcDisabled {
 		//Start create rpcclient
 		btcNotifier = notify.NewBtcNotifier()
-		var btcNodeVer semver.Semver
 		var btcConnectErr error
-		btcdClient, btcNodeVer, btcConnectErr = connectBTCNodeRPC(cfg, btcNotifier.BtcdHandlers())
+		btcdClient, btcConnectErr = connectBTCNodeRPC(cfg)
 		if btcConnectErr != nil || btcdClient == nil {
-			return fmt.Errorf("Connection to btcd failed: %v", btcConnectErr)
+			return fmt.Errorf("Connection to bitcoind failed: %v", btcConnectErr)
 		}
-		btcCurnet, btcErr := btcdClient.GetCurrentNet()
+		btcChainInfo, btcErr := btcdClient.GetBlockChainInfo()
 		if btcErr != nil {
-			return fmt.Errorf("Unable to get current network from btcd: %v", btcErr)
+			return fmt.Errorf("Unable to get blockchain info from bitcoind: %v", btcErr)
 		}
-		log.Infof("Connected to btcd (JSON-RPC API v%s) on %v", btcNodeVer.String(), btcCurnet.String())
-		if btcCurnet != btcActiveNet.Net {
-			log.Criticalf("BTCD: Network of connected node, %s, does not match expected "+
-				"network, %s.", btcActiveNet.Net, btcCurnet)
-			return fmt.Errorf("expected network %s, got %s", btcActiveNet.Net, btcCurnet)
-		}
+		log.Infof("Connected to bitcoind on %v", btcChainInfo.Chain)
 		chainDB.BtcClient = btcdClient
+		btcNotifier.SetClient(btcdClient)
 
 		var btcHash *btcchainhash.Hash
-		btcHash, btcHeight, err = btcdClient.GetBestBlock()
+		btcHash, btcHeight64, btcErr := btcrpcutils.GetBestBlock(btcdClient)
 		btcTime := int64(0)
-		if err != nil {
-			return fmt.Errorf("Unable to get block from btc node: %v", err)
+		if btcErr != nil {
+			return fmt.Errorf("Unable to get block from btc node: %v", btcErr)
 		}
-		blockhash, err := btcdClient.GetBlockHash(int64(btcHeight))
+		btcHeight = int32(btcHeight64)
+		blockhash, err := btcdClient.GetBlockHash(btcHeight64)
 		if err == nil {
 			blockRst, rstErr := btcdClient.GetBlockVerbose(blockhash)
 			if rstErr == nil {
@@ -388,7 +378,7 @@ func _main(ctx context.Context) error {
 		}
 		//create bestblock object
 		bestBlock := &dcrpg.MutilchainBestBlock{
-			Height: int64(btcHeight),
+			Height: btcHeight64,
 			Hash:   btcHash.String(),
 			Time:   btcTime,
 		}
@@ -1842,38 +1832,23 @@ func _main(ctx context.Context) error {
 		if checkErr != nil {
 			return fmt.Errorf("Check and create table for blockchain %s errors: %w", mutilchain.TYPELTC, checkErr)
 		}
-		//first, use external socket api to get mempool info
-		mainSocket, err := chainsocket.NewMutilchainInfoSocket(explore, mutilchain.TYPELTC)
-		if err == nil {
-			err = mainSocket.StartMempoolConnectAndUpdate()
-		}
-		if err != nil {
-			log.Infof("Create external API socket failed. Start initialize mempool data with Mempool collector")
-			if !chainDB.ChainDBDisabled {
-				//handler mempool with Mempool monitor
-				ltcMempoolSavers := []mempoolltc.MempoolDataSaver{chainDB.LTCMPC}
-				ltcMempoolSavers = append(ltcMempoolSavers, explore)
-				// Create the mempool data collector.
-				ltcMpoolCollector := mempoolltc.NewDataCollector(ltcdClient, ltcActiveChain)
-				if ltcMpoolCollector == nil {
-					// Shutdown goroutines.
-					requestShutdown()
-					return fmt.Errorf("Failed to create LTC mempool data collector")
-				}
-
-				mpm, err := mempoolltc.NewMempoolMonitor(ctx, ltcMpoolCollector, ltcMempoolSavers,
-					ltcActiveChain, true)
-
-				// Ensure the initial collect/store succeeded.
-				if err != nil {
-					// Shutdown goroutines.
-					requestShutdown()
-					return fmt.Errorf("NewMempoolMonitor: %v", err)
-				}
-
-				// Use the MempoolMonitor in DB to get unconfirmed transaction data.
-				chainDB.UseLTCMempoolChecker(mpm)
+		// Initialize LTC mempool data via mempool collector
+		if !chainDB.ChainDBDisabled {
+			ltcMempoolSavers := []mempoolltc.MempoolDataSaver{chainDB.LTCMPC}
+			ltcMempoolSavers = append(ltcMempoolSavers, explore)
+			ltcMpoolCollector := mempoolltc.NewDataCollector(ltcdClient, ltcActiveChain)
+			if ltcMpoolCollector == nil {
+				requestShutdown()
+				return fmt.Errorf("Failed to create LTC mempool data collector")
 			}
+
+			mpm, err := mempoolltc.NewMempoolMonitor(ctx, ltcMpoolCollector, ltcMempoolSavers,
+				ltcActiveChain, true)
+			if err != nil {
+				requestShutdown()
+				return fmt.Errorf("NewMempoolMonitor: %v", err)
+			}
+			chainDB.UseLTCMempoolChecker(mpm)
 		}
 
 		//Start - LTC Sync handler
@@ -1960,7 +1935,8 @@ func _main(ctx context.Context) error {
 		// Before starting the DB sync, trigger the explorer to display data for
 		// the current best block.
 		// Retrieve the hash of the best block across every DB.
-		ltcDaemonLastestBlockHash, ltcBestHeight, bestErr := ltcdClient.GetBestBlock()
+		ltcDaemonLastestBlockHash, ltcBestHeight64, bestErr := ltcrpcutils.GetBestBlock(ltcdClient)
+		ltcBestHeight := int32(ltcBestHeight64)
 		if bestErr != nil {
 			return fmt.Errorf("failed to fetch the block at height (%d): %v",
 				ltcBestHeight, bestErr)
@@ -1993,10 +1969,7 @@ func _main(ctx context.Context) error {
 			ltcReorgBlockDataSavers)
 
 		ltcNotifier.RegisterBlockHandlerGroup(ltcBdChainMonitor.ConnectBlock)
-		// Register for notifications from dcrd. This also sets the daemon RPC
-		// client used by other functions in the notify/notification package (i.e.
-		// common ancestor identification in processReorg).
-		cerr := ltcNotifier.Listen(ctx, ltcdClient)
+		cerr := ltcNotifier.Listen(ctx)
 		if cerr != nil {
 			return fmt.Errorf("LTC RPC client error: %v (%v)", cerr.Error(), cerr.Cause())
 		}
@@ -2009,15 +1982,6 @@ func _main(ctx context.Context) error {
 		checkErr := chainDB.MutilchainCheckAndCreateTable(mutilchain.TYPEBTC)
 		if checkErr != nil {
 			return fmt.Errorf("Check and create table for blockchain %s errors: %w", mutilchain.TYPEBTC, checkErr)
-		}
-
-		//first, use external socket api to get mempool info
-		mainSocket, err := chainsocket.NewMutilchainInfoSocket(explore, mutilchain.TYPEBTC)
-		if err == nil {
-			err = mainSocket.StartMempoolConnectAndUpdate()
-		}
-		if err != nil {
-			log.Infof("Create external API socket failed. Start initialize mempool data with Mempool collector")
 		}
 
 		//Start - BTC Sync handler
@@ -2106,7 +2070,8 @@ func _main(ctx context.Context) error {
 		// the current best block.
 
 		// Retrieve the hash of the best block across every DB.
-		btcDaemonLastestBlockHash, btcBestHeight, btcBestErr := btcdClient.GetBestBlock()
+		btcDaemonLastestBlockHash, btcBestHeight64, btcBestErr := btcrpcutils.GetBestBlock(btcdClient)
+		btcBestHeight := int32(btcBestHeight64)
 		if btcBestErr != nil {
 			return fmt.Errorf("failed to fetch the block at height (%d): %v",
 				btcBestHeight, btcBestErr)
@@ -2138,10 +2103,7 @@ func _main(ctx context.Context) error {
 			btcReorgBlockDataSavers)
 
 		btcNotifier.RegisterBlockHandlerGroup(btcBdChainMonitor.ConnectBlock)
-		// Register for notifications from dcrd. This also sets the daemon RPC
-		// client used by other functions in the notify/notification package (i.e.
-		// common ancestor identification in processReorg).
-		cerr := btcNotifier.Listen(ctx, btcdClient)
+		cerr := btcNotifier.Listen(ctx)
 		if cerr != nil {
 			return fmt.Errorf("BTC RPC client error: %v (%v)", cerr.Error(), cerr.Cause())
 		}
@@ -2329,14 +2291,12 @@ func connectNodeRPC(cfg *config, ntfnHandlers *rpcclient.NotificationHandlers) (
 		cfg.DcrdCert, cfg.DisableDaemonTLS, false, ntfnHandlers)
 }
 
-func connectLTCNodeRPC(cfg *config, ntfnHandlers *ltcClient.NotificationHandlers) (*ltcClient.Client, semver.Semver, error) {
-	return ltcrpcutils.ConnectNodeRPC(cfg.LtcdServ, cfg.LtcdUser, cfg.LtcdPass,
-		cfg.LtcdCert, cfg.DisableDaemonTLS, false, ntfnHandlers)
+func connectLTCNodeRPC(cfg *config) (*ltcClient.Client, error) {
+	return ltcrpcutils.ConnectNodeRPC(cfg.LtcdServ, cfg.LtcdUser, cfg.LtcdPass)
 }
 
-func connectBTCNodeRPC(cfg *config, ntfnHandlers *btcClient.NotificationHandlers) (*btcClient.Client, semver.Semver, error) {
-	return btcrpcutils.ConnectNodeRPC(cfg.BtcdServ, cfg.BtcdUser, cfg.BtcdPass,
-		cfg.BtcdCert, cfg.DisableDaemonTLS, false, ntfnHandlers)
+func connectBTCNodeRPC(cfg *config) (*btcClient.Client, error) {
+	return btcrpcutils.ConnectNodeRPC(cfg.BtcdServ, cfg.BtcdUser, cfg.BtcdPass)
 }
 
 func listenAndServeProto(ctx context.Context, wg *sync.WaitGroup, listen, proto string, mux http.Handler) {
