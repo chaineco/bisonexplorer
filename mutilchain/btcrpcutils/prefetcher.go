@@ -19,7 +19,7 @@ const (
 
 // BlockFetcher implements a few basic block data retrieval functions.
 type BlockFetcher interface {
-	GetBestBlock() (*chainhash.Hash, int32, error)
+	GetBlockCount() (int64, error)
 	GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error)
 	GetBlockHash(blockHeight int64) (*chainhash.Hash, error)
 	GetBlockHeaderVerbose(hash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error)
@@ -94,11 +94,9 @@ func (p *BlockPrefetchClient) Misses() uint64 {
 	return p.misses
 }
 
-// GetBestBlock is a passthrough to the client. It does not retarget the
-// prefetch range since it does not request the actual block, just the hash and
-// height of the best block.
-func (p *BlockPrefetchClient) GetBestBlock() (*chainhash.Hash, int32, error) {
-	return p.f.GetBestBlock()
+// GetBlockCount is a passthrough to the client.
+func (p *BlockPrefetchClient) GetBlockCount() (int64, error) {
+	return p.f.GetBlockCount()
 }
 
 // GetBlockData attempts to get the specified block and retargets the prefetcher
