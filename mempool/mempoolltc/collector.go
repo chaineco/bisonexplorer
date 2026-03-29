@@ -21,7 +21,8 @@ import (
 // txhelpers.VerboseTransactionPromiseGetter.
 type NodeClient interface {
 	GetRawMempoolVerbose() (map[string]btcjson.GetRawMempoolVerboseResult, error)
-	GetBestBlock() (*chainhash.Hash, int32, error)
+	GetBlockCount() (int64, error)
+	GetBlockHash(blockHeight int64) (*chainhash.Hash, error)
 	txhelpers.LTCRawTransactionGetter
 	txhelpers.LTCVerboseTransactionGetter
 	GetBlockHeaderVerbose(hash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error)
@@ -55,7 +56,11 @@ func (t *DataCollector) Collect() (*BlockID, []exptypes.MempoolTx, txhelpers.LTC
 		return nil, nil, nil, nil, fmt.Errorf("GetRawMempoolVerbose failed: %v", err)
 	}
 
-	bestHash, bestHeight, err := t.ltcdChainSvr.GetBestBlock()
+	bestHeight, err := t.ltcdChainSvr.GetBlockCount()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	bestHash, err := t.ltcdChainSvr.GetBlockHash(bestHeight)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -66,7 +71,7 @@ func (t *DataCollector) Collect() (*BlockID, []exptypes.MempoolTx, txhelpers.LTC
 	blockTime := header.Time
 	blockId := &BlockID{
 		Hash:   *bestHash,
-		Height: int64(bestHeight),
+		Height: bestHeight,
 		Time:   blockTime,
 	}
 
