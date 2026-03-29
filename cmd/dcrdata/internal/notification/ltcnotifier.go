@@ -1,25 +1,8 @@
-// Copyright (c) 2018-2021, The Decred developers
-// Copyright (c) 2017, Jonathan Chappelow
-// See LICENSE for details.
-
-// Package notification synchronizes dcrd notifications to any number of
-// handlers. Typical use:
-//  1. Create a Notifier with NewNotifier.
-//  2. Grab dcrd configuration settings with DcrdHandlers.
-//  3. Create an dcrd/rpcclient.Client with the settings from step 2.
-//  4. Add handlers with the Register*Group methods. You can add more than
-//     one handler (a "group") at a time. Groups are run sequentially in the
-//     order that they are registered, but the handlers within a group are run
-//     asynchronously.
-//  5. Set the previous best known block with SetPreviousBlock. By this point,
-//     it should be certain that all of the data consumers are synced to the best
-//     block.
-//  6. **After all handlers have been added**, start the Notifier with Listen,
-//     providing as an argument the dcrd client created in step 3.
 package notification
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -29,98 +12,128 @@ import (
 	"github.com/ltcsuite/ltcd/rpcclient"
 )
 
-// TxHandler is a function that will be called when dcrd reports new mempool
-// transactions.
+// LtcTxHandler is a function that will be called for new mempool transactions.
 type LtcTxHandler func(*btcjson.TxRawResult) error
 
-// BlockHandler is a function that will be called when dcrd reports a new block.
+// LtcBlockHandler is a function that will be called when a new block is detected.
 type LtcBlockHandler func(*mutilchain.LtcBlockHeader) error
 
-// BlockHandlerLite is a simpler trigger using only bultin types, also called
-// when dcrd reports a new block.
+// LtcBlockHandlerLite is a simpler trigger using only builtin types.
 type LtcBlockHandlerLite func(uint32, string) error
 
-// Notifier handles block, tx, and reorg notifications from a dcrd node. Handler
-// functions are registered with the Register*Handlers methods. To start the
-// Notifier, Listen must be called with a dcrd rpcclient.Client only after all
-// handlers are registered.
+// LTCNotifier handles block notifications from a litecoind node via HTTP polling.
 type LTCNotifier struct {
-	node LTCDNode
-	// The anyQ sequences all dcrd notification in the order they are received.
-	anyQ     chan interface{}
-	tx       [][]LtcTxHandler
-	block    [][]LtcBlockHandler
-	previous struct {
+	client          *rpcclient.Client
+	anyQ            chan interface{}
+	tx              [][]LtcTxHandler
+	block           [][]LtcBlockHandler
+	pollInterval    time.Duration
+	lastKnownHeight int64
+	previous        struct {
 		hash   chainhash.Hash
 		height uint32
 	}
 }
 
-// NewNotifier is the constructor for a Notifier.
+// NewLtcNotifier is the constructor for a LTCNotifier.
 func NewLtcNotifier() *LTCNotifier {
 	return &LTCNotifier{
-		// anyQ can cause deadlocks if it gets full. All mempool transactions pass
-		// through here, so the size should stay pretty big to accommodate for the
-		// inevitable explosive growth of the network.
-		anyQ:  make(chan interface{}, 1024),
-		tx:    make([][]LtcTxHandler, 0),
-		block: make([][]LtcBlockHandler, 0),
+		anyQ:         make(chan interface{}, 1024),
+		tx:           make([][]LtcTxHandler, 0),
+		block:        make([][]LtcBlockHandler, 0),
+		pollInterval: 10 * time.Second,
 	}
 }
 
-// DCRDNode is an interface to wrap a dcrd rpcclient.Client. The interface
-// allows testing with a dummy node.
-type LTCDNode interface {
-	NotifyBlocks() error
-	NotifyNewTransactions(bool) error
+// SetClient sets the RPC client for polling.
+func (notifier *LTCNotifier) SetClient(client *rpcclient.Client) {
+	notifier.client = client
 }
 
-// Listen must be called once, but only after all handlers are registered.
-func (notifier *LTCNotifier) Listen(ctx context.Context, ltcdClient LTCDNode) *ContextualError {
-	// Register for block connection and chain reorg notifications.
-	notifier.node = ltcdClient
-
-	var err error
-	if err = ltcdClient.NotifyBlocks(); err != nil {
-		return newContextualError("block notification "+
-			"registration failed", err)
+// Listen starts polling for new blocks. Must be called after SetClient and
+// after all handlers are registered.
+func (notifier *LTCNotifier) Listen(ctx context.Context) *ContextualError {
+	if notifier.client == nil {
+		return newContextualError("client not set", fmt.Errorf("call SetClient first"))
 	}
 
-	// Register for tx accepted into mempool ntfns
-	if err = ltcdClient.NotifyNewTransactions(true); err != nil {
-		return newContextualError("new transaction verbose notification registration failed", err)
+	height, err := notifier.client.GetBlockCount()
+	if err != nil {
+		return newContextualError("failed to get initial block count", err)
 	}
+	notifier.lastKnownHeight = height
+
+	log.Infof("LTC: Starting block polling, interval %v, height: %d", notifier.pollInterval, height)
 
 	go notifier.superQueue(ctx)
+	go notifier.pollBlocks(ctx)
 	return nil
 }
 
-// DcrdHandlers creates a set of handlers to be passed to the dcrd
-// rpcclient.Client as a parameter of its constructor.
-func (notifier *LTCNotifier) LtcdHandlers() *rpcclient.NotificationHandlers {
-	return &rpcclient.NotificationHandlers{
-		OnBlockConnected:    notifier.onBlockConnected,
-		OnBlockDisconnected: notifier.onBlockDisconnected,
-		// OnTxAcceptedVerbose is invoked same as OnTxAccepted but is used here
-		// for the mempool monitors to avoid an extra call to dcrd for
-		// the tx details
-		OnTxAcceptedVerbose: notifier.onTxAcceptedVerbose,
+func (notifier *LTCNotifier) SetPreviousBlock(prevHash chainhash.Hash, prevHeight uint32) {
+	notifier.previous.hash = prevHash
+	notifier.previous.height = prevHeight
+}
+
+// pollBlocks polls for new blocks periodically.
+func (notifier *LTCNotifier) pollBlocks(ctx context.Context) {
+	ticker := time.NewTicker(notifier.pollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("LTC: Block polling stopped")
+			return
+		case <-ticker.C:
+			notifier.checkForNewBlocks()
+		}
 	}
 }
 
-// superQueue should be run as a goroutine. The dcrd-registered block and reorg
-// handlers should perform any pre-processing and type conversion and then
-// deposit the payload into the anyQ channel.
+// checkForNewBlocks checks if there are new blocks and queues them.
+func (notifier *LTCNotifier) checkForNewBlocks() {
+	if notifier.client == nil {
+		return
+	}
+
+	currentHeight, err := notifier.client.GetBlockCount()
+	if err != nil {
+		log.Errorf("LTC: Failed to get block count: %v", err)
+		return
+	}
+
+	lastHeight := notifier.lastKnownHeight
+
+	for height := lastHeight + 1; height <= currentHeight; height++ {
+		hash, err := notifier.client.GetBlockHash(height)
+		if err != nil {
+			log.Errorf("LTC: Failed to get block hash for height %d: %v", height, err)
+			return
+		}
+
+		blockHeader := &mutilchain.LtcBlockHeader{
+			Hash:   *hash,
+			Height: int32(height),
+			Time:   time.Now(),
+		}
+
+		log.Infof("LTC: New block at height %d: %v", height, hash)
+		notifier.anyQ <- blockHeader
+	}
+
+	if currentHeight > lastHeight {
+		notifier.lastKnownHeight = currentHeight
+	}
+}
+
+// superQueue processes notifications from the queue.
 func (notifier *LTCNotifier) superQueue(ctx context.Context) {
 out:
 	for {
 		select {
 		case rawMsg := <-notifier.anyQ:
-			// Do not allow new blocks to process while running reorg. Only allow
-			// them to be processed after this reorg completes.
 			switch msg := rawMsg.(type) {
 			case *mutilchain.LtcBlockHeader:
-				// Process the new block.
 				log.Infof("LTCSuperQueue: Processing new block %v. Height: %d", msg.Hash, msg.Height)
 				notifier.processBlock(msg)
 			case *btcjson.TxRawResult:
@@ -134,73 +147,24 @@ out:
 	}
 }
 
-func (notifier *LTCNotifier) SetPreviousBlock(prevHash chainhash.Hash, prevHeight uint32) {
-	notifier.previous.hash = prevHash
-	notifier.previous.height = prevHeight
-}
-
-// rpcclient.NotificationHandlers.OnBlockConnected
-// TODO: considering using txns [][]byte to save on downstream RPCs.
-func (notifier *LTCNotifier) onBlockConnected(hash *chainhash.Hash, height int32, t time.Time) {
-	blockHeader := &mutilchain.LtcBlockHeader{
-		Hash:   *hash,
-		Height: height,
-		Time:   t,
-	}
-
-	log.Debugf("OnBlockConnected: %d / %v", height, hash)
-
-	notifier.anyQ <- blockHeader
-}
-
-// rpcclient.NotificationHandlers.OnBlockDisconnected
-func (notifier *LTCNotifier) onBlockDisconnected(hash *chainhash.Hash, height int32, t time.Time) {
-	log.Debugf("OnBlockDisconnected: %d / %v", height, hash)
-}
-
-// rpcclient.NotificationHandlers.OnTxAcceptedVerbose
-func (notifier *LTCNotifier) onTxAcceptedVerbose(tx *btcjson.TxRawResult) {
-	// Current UNIX time to assign the new transaction.
-	tx.Time = time.Now().Unix()
-	notifier.anyQ <- tx
-}
-
-// RegisterTxHandlerGroup adds a group of tx handlers. Groups are run
-// sequentially in the order they are registered, but the handlers within the
-// group are run asynchronously.
+// RegisterTxHandlerGroup adds a group of tx handlers.
 func (notifier *LTCNotifier) RegisterTxHandlerGroup(handlers ...LtcTxHandler) {
 	notifier.tx = append(notifier.tx, handlers)
 }
 
-// RegisterBlockHandlerGroup adds a group of block handlers. Groups are run
-// sequentially in the order they are registered, but the handlers within the
-// group are run asynchronously. Handlers registered with
-// RegisterBlockHandlerGroup are FIFO'd together with handlers registered with
-// RegisterBlockHandlerLiteGroup.
+// RegisterBlockHandlerGroup adds a group of block handlers.
 func (notifier *LTCNotifier) RegisterBlockHandlerGroup(handlers ...LtcBlockHandler) {
 	notifier.block = append(notifier.block, handlers)
 }
 
-// RegisterBlockHandlerLiteGroup adds a group of block handlers. Groups are run
-// sequentially in the order they are registered, but the handlers within the
-// group are run asynchronously. This method differs from
-// RegisterBlockHandlerGroup in that the handlers take no arguments, so their
-// packages don't necessarily need to import dcrd/wire. Handlers registered with
-// RegisterBlockHandlerLiteGroup are FIFO'd together with handlers registered
-// with RegisterBlockHandlerGroup.
+// RegisterBlockHandlerLiteGroup adds a group of block handlers using builtin types.
 func (notifier *LTCNotifier) RegisterBlockHandlerLiteGroup(handlers ...LtcBlockHandlerLite) {
 	translations := make([]LtcBlockHandler, 0, len(handlers))
-	// for i := range handlers {
-	// 	handler := handlers[i]
-	// 	translations = append(translations, func(block *wire.BlockHeader) error {
-	// 		return handler(block., block.BlockHash().String())
-	// 	})
-	// }
 	notifier.RegisterBlockHandlerGroup(translations...)
 }
 
-// processBlock calls the BlockHandler/BlockHandlerLite groups one at a time in
-// the order that they were registered.
+// processBlock calls the BlockHandler groups one at a time in the order
+// that they were registered.
 func (notifier *LTCNotifier) processBlock(bh *mutilchain.LtcBlockHeader) {
 	start := time.Now()
 	for _, handlers := range notifier.block {

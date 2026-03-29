@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -11,83 +12,62 @@ import (
 	"github.com/decred/dcrdata/v8/mutilchain"
 )
 
-// TxHandler is a function that will be called when dcrd reports new mempool
-// transactions.
+// BtcTxHandler is a function that will be called for new mempool transactions.
 type BtcTxHandler func(*btcjson.TxRawResult) error
 
-// BlockHandler is a function that will be called when dcrd reports a new block.
+// BtcBlockHandler is a function that will be called when a new block is detected.
 type BtcBlockHandler func(*mutilchain.BtcBlockHeader) error
 
-// BlockHandlerLite is a simpler trigger using only bultin types, also called
-// when dcrd reports a new block.
+// BtcBlockHandlerLite is a simpler trigger using only builtin types.
 type BtcBlockHandlerLite func(uint32, string) error
 
-// Notifier handles block, tx, and reorg notifications from a dcrd node. Handler
-// functions are registered with the Register*Handlers methods. To start the
-// Notifier, Listen must be called with a dcrd rpcclient.Client only after all
-// handlers are registered.
+// BTCNotifier handles block notifications from a bitcoind node via HTTP polling.
 type BTCNotifier struct {
-	node BTCDNode
-	// The anyQ sequences all dcrd notification in the order they are received.
-	anyQ     chan interface{}
-	tx       [][]BtcTxHandler
-	block    [][]BtcBlockHandler
-	previous struct {
+	client          *rpcclient.Client
+	anyQ            chan interface{}
+	tx              [][]BtcTxHandler
+	block           [][]BtcBlockHandler
+	pollInterval    time.Duration
+	lastKnownHeight int64
+	previous        struct {
 		hash   chainhash.Hash
 		height uint32
 	}
 }
 
-// NewNotifier is the constructor for a Notifier.
+// NewBtcNotifier is the constructor for a BTCNotifier.
 func NewBtcNotifier() *BTCNotifier {
 	return &BTCNotifier{
-		// anyQ can cause deadlocks if it gets full. All mempool transactions pass
-		// through here, so the size should stay pretty big to accommodate for the
-		// inevitable explosive growth of the network.
-		anyQ:  make(chan interface{}, 1024),
-		tx:    make([][]BtcTxHandler, 0),
-		block: make([][]BtcBlockHandler, 0),
+		anyQ:         make(chan interface{}, 1024),
+		tx:           make([][]BtcTxHandler, 0),
+		block:        make([][]BtcBlockHandler, 0),
+		pollInterval: 10 * time.Second,
 	}
 }
 
-// DCRDNode is an interface to wrap a dcrd rpcclient.Client. The interface
-// allows testing with a dummy node.
-type BTCDNode interface {
-	NotifyBlocks() error
-	NotifyNewTransactions(bool) error
+// SetClient sets the RPC client for polling.
+func (notifier *BTCNotifier) SetClient(client *rpcclient.Client) {
+	notifier.client = client
 }
 
-// Listen must be called once, but only after all handlers are registered.
-func (notifier *BTCNotifier) Listen(ctx context.Context, btcdClient BTCDNode) *ContextualError {
-	// Register for block connection and chain reorg notifications.
-	notifier.node = btcdClient
-
-	var err error
-	if err = btcdClient.NotifyBlocks(); err != nil {
-		return newContextualError("block notification "+
-			"registration failed", err)
+// Listen starts polling for new blocks. Must be called after SetClient and
+// after all handlers are registered.
+func (notifier *BTCNotifier) Listen(ctx context.Context) *ContextualError {
+	if notifier.client == nil {
+		return newContextualError("client not set", fmt.Errorf("call SetClient first"))
 	}
 
-	// Register for tx accepted into mempool ntfns
-	if err = btcdClient.NotifyNewTransactions(true); err != nil {
-		return newContextualError("new transaction verbose notification registration failed", err)
+	height, err := notifier.client.GetBlockCount()
+	if err != nil {
+		return newContextualError("failed to get initial block count", err)
 	}
+	notifier.lastKnownHeight = height
+
+	log.Infof("BTC: Starting block polling, interval %v, height: %d", notifier.pollInterval, height)
 
 	go notifier.superQueue(ctx)
+	go notifier.pollBlocks(ctx)
 	return nil
-}
-
-// DcrdHandlers creates a set of handlers to be passed to the dcrd
-// rpcclient.Client as a parameter of its constructor.
-func (notifier *BTCNotifier) BtcdHandlers() *rpcclient.NotificationHandlers {
-	return &rpcclient.NotificationHandlers{
-		OnBlockConnected:    notifier.onBlockConnected,
-		OnBlockDisconnected: notifier.onBlockDisconnected,
-		// OnTxAcceptedVerbose is invoked same as OnTxAccepted but is used here
-		// for the mempool monitors to avoid an extra call to dcrd for
-		// the tx details
-		OnTxAcceptedVerbose: notifier.onTxAcceptedVerbose,
-	}
 }
 
 func (notifier *BTCNotifier) SetPreviousBlock(prevHash chainhash.Hash, prevHeight uint32) {
@@ -95,19 +75,65 @@ func (notifier *BTCNotifier) SetPreviousBlock(prevHash chainhash.Hash, prevHeigh
 	notifier.previous.height = prevHeight
 }
 
-// superQueue should be run as a goroutine. The dcrd-registered block and reorg
-// handlers should perform any pre-processing and type conversion and then
-// deposit the payload into the anyQ channel.
+// pollBlocks polls for new blocks periodically.
+func (notifier *BTCNotifier) pollBlocks(ctx context.Context) {
+	ticker := time.NewTicker(notifier.pollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("BTC: Block polling stopped")
+			return
+		case <-ticker.C:
+			notifier.checkForNewBlocks()
+		}
+	}
+}
+
+// checkForNewBlocks checks if there are new blocks and queues them.
+func (notifier *BTCNotifier) checkForNewBlocks() {
+	if notifier.client == nil {
+		return
+	}
+
+	currentHeight, err := notifier.client.GetBlockCount()
+	if err != nil {
+		log.Errorf("BTC: Failed to get block count: %v", err)
+		return
+	}
+
+	lastHeight := notifier.lastKnownHeight
+
+	for height := lastHeight + 1; height <= currentHeight; height++ {
+		hash, err := notifier.client.GetBlockHash(height)
+		if err != nil {
+			log.Errorf("BTC: Failed to get block hash for height %d: %v", height, err)
+			return
+		}
+
+		blockHeader := &mutilchain.BtcBlockHeader{
+			Hash:   *hash,
+			Height: int32(height),
+			Time:   time.Now(),
+		}
+
+		log.Infof("BTC: New block at height %d: %v", height, hash)
+		notifier.anyQ <- blockHeader
+	}
+
+	if currentHeight > lastHeight {
+		notifier.lastKnownHeight = currentHeight
+	}
+}
+
+// superQueue processes notifications from the queue.
 func (notifier *BTCNotifier) superQueue(ctx context.Context) {
 out:
 	for {
 		select {
 		case rawMsg := <-notifier.anyQ:
-			// Do not allow new blocks to process while running reorg. Only allow
-			// them to be processed after this reorg completes.
 			switch msg := rawMsg.(type) {
 			case *mutilchain.BtcBlockHeader:
-				// Process the new block.
 				log.Infof("BTCSuperQueue: Processing new block %v. Height: %d", msg.Hash, msg.Height)
 				notifier.processBlock(msg)
 			case *btcjson.TxRawResult:
@@ -121,68 +147,24 @@ out:
 	}
 }
 
-// rpcclient.NotificationHandlers.OnBlockConnected
-// TODO: considering using txns [][]byte to save on downstream RPCs.
-func (notifier *BTCNotifier) onBlockConnected(hash *chainhash.Hash, height int32, t time.Time) {
-	blockHeader := &mutilchain.BtcBlockHeader{
-		Hash:   *hash,
-		Height: height,
-		Time:   t,
-	}
-
-	log.Debugf("OnBlockConnected: %d / %v", height, hash)
-
-	notifier.anyQ <- blockHeader
-}
-
-// rpcclient.NotificationHandlers.OnBlockDisconnected
-func (notifier *BTCNotifier) onBlockDisconnected(hash *chainhash.Hash, height int32, t time.Time) {
-	log.Debugf("OnBlockDisconnected: %d / %v", height, hash)
-}
-
-// rpcclient.NotificationHandlers.OnTxAcceptedVerbose
-func (notifier *BTCNotifier) onTxAcceptedVerbose(tx *btcjson.TxRawResult) {
-	// Current UNIX time to assign the new transaction.
-	tx.Time = time.Now().Unix()
-	notifier.anyQ <- tx
-}
-
-// RegisterTxHandlerGroup adds a group of tx handlers. Groups are run
-// sequentially in the order they are registered, but the handlers within the
-// group are run asynchronously.
+// RegisterTxHandlerGroup adds a group of tx handlers.
 func (notifier *BTCNotifier) RegisterTxHandlerGroup(handlers ...BtcTxHandler) {
 	notifier.tx = append(notifier.tx, handlers)
 }
 
-// RegisterBlockHandlerGroup adds a group of block handlers. Groups are run
-// sequentially in the order they are registered, but the handlers within the
-// group are run asynchronously. Handlers registered with
-// RegisterBlockHandlerGroup are FIFO'd together with handlers registered with
-// RegisterBlockHandlerLiteGroup.
+// RegisterBlockHandlerGroup adds a group of block handlers.
 func (notifier *BTCNotifier) RegisterBlockHandlerGroup(handlers ...BtcBlockHandler) {
 	notifier.block = append(notifier.block, handlers)
 }
 
-// RegisterBlockHandlerLiteGroup adds a group of block handlers. Groups are run
-// sequentially in the order they are registered, but the handlers within the
-// group are run asynchronously. This method differs from
-// RegisterBlockHandlerGroup in that the handlers take no arguments, so their
-// packages don't necessarily need to import dcrd/wire. Handlers registered with
-// RegisterBlockHandlerLiteGroup are FIFO'd together with handlers registered
-// with RegisterBlockHandlerGroup.
+// RegisterBlockHandlerLiteGroup adds a group of block handlers using builtin types.
 func (notifier *BTCNotifier) RegisterBlockHandlerLiteGroup(handlers ...BtcBlockHandlerLite) {
 	translations := make([]BtcBlockHandler, 0, len(handlers))
-	// for i := range handlers {
-	// 	handler := handlers[i]
-	// 	translations = append(translations, func(block *wire.BlockHeader) error {
-	// 		return handler(block., block.BlockHash().String())
-	// 	})
-	// }
 	notifier.RegisterBlockHandlerGroup(translations...)
 }
 
-// processBlock calls the BlockHandler/BlockHandlerLite groups one at a time in
-// the order that they were registered.
+// processBlock calls the BlockHandler groups one at a time in the order
+// that they were registered.
 func (notifier *BTCNotifier) processBlock(bh *mutilchain.BtcBlockHeader) {
 	start := time.Now()
 
