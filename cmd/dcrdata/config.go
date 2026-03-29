@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
 	btccfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/caarlos0/env/v6"
 	"github.com/decred/dcrd/chaincfg/v3"
@@ -30,7 +29,6 @@ import (
 	"github.com/decred/slog"
 	flags "github.com/jessevdk/go-flags"
 	ltccfg "github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcd/ltcutil"
 )
 
 const (
@@ -54,12 +52,8 @@ var (
 	defaultConfigFile           = filepath.Join(defaultHomeDir, defaultConfigFilename)
 	defaultLogDir               = filepath.Join(defaultHomeDir, defaultLogDirname)
 	defaultDataDir              = filepath.Join(defaultHomeDir, defaultDataDirname)
-	dcrdHomeDir                 = dcrutil.AppDataDir("dcrd", false)
-	ltcdHomeDir                 = ltcutil.AppDataDir("ltcd", false)
-	btcdHomeDir                 = btcutil.AppDataDir("btcd", false)
-	defaultDaemonRPCCertFile    = filepath.Join(dcrdHomeDir, "rpc.cert")
-	defaultLTCDaemonRPCCertFile = filepath.Join(ltcdHomeDir, "rpc.cert")
-	defaultBTCDaemonRPCCertFile = filepath.Join(btcdHomeDir, "rpc.cert")
+	dcrdHomeDir              = dcrutil.AppDataDir("dcrd", false)
+	defaultDaemonRPCCertFile = filepath.Join(dcrdHomeDir, "rpc.cert")
 	defaultMaxLogZips           = 16
 
 	defaultHost         = "localhost"
@@ -71,15 +65,15 @@ var (
 	defaultSimnetPort  = "17779"
 	defaultIndentJSON  = "   "
 	//ltc config
-	//Litecoin core: 9332, 19332. Ltcd: 9334, 19334
-	defaultLTCMainnetPort = "9334"
-	defaultLTCTestnetPort = "19334"
+	//Litecoind: 9332, 19332
+	defaultLTCMainnetPort = "9332"
+	defaultLTCTestnetPort = "19332"
 	defaultLTCSimnetPort  = "19335"
 	defaultLTCIndentJSON  = "   "
-	//Bitcoin: btcd: 8334, 18334
-	defaultBTCMainnetPort   = "8334"
+	//Bitcoind: 8332, 18332
+	defaultBTCMainnetPort   = "8332"
 	defaultXMRMainnetServer = "http://127.0.0.1:18081/json_rpc"
-	defaultBTCTestnetPort   = "18334"
+	defaultBTCTestnetPort   = "18332"
 	defaultBTCSimnetPort    = "18335"
 	defaultBTCIndentJSON    = "   "
 
@@ -198,17 +192,15 @@ type config struct {
 	DisabledChain string `long:"disabledchain" description:"Blockchain types are disabled" env:"DCRDATA_DISABLED_CHAINS"`
 	//coin market cap support list
 	CoincapActive string `long:"coincapactive" description:"List of blockchains that support getting coin market cap data" env:"DCRDATA_COINCAP_ACTIVE"`
-	// LTC RPC client options
+	// LTC RPC client options (litecoind HTTP mode)
 	LtcdUser string `long:"ltcduser" description:"Daemon RPC user name" env:"DCRDATA_LTCD_USER"`
 	LtcdPass string `long:"ltcdpass" description:"Daemon RPC password" env:"DCRDATA_LTCD_PASS"`
-	LtcdServ string `long:"ltcdserv" description:"Hostname/IP and port of ltcd RPC server to connect to (default localhost:9334, testnet: localhost:19334, simnet: localhost:???)" env:"DCRDATA_LTCD_URL"`
-	LtcdCert string `long:"ltcdcert" description:"File containing the ltcd certificate file" env:"DCRDATA_LTCD_CERT"`
+	LtcdServ string `long:"ltcdserv" description:"Hostname/IP and port of litecoind RPC server to connect to (default localhost:9332, testnet: localhost:19332)" env:"DCRDATA_LTCD_URL"`
 
-	// BTC RPC client options
+	// BTC RPC client options (bitcoind HTTP mode)
 	BtcdUser string `long:"btcduser" description:"Daemon RPC user name" env:"DCRDATA_BTCD_USER"`
 	BtcdPass string `long:"btcdpass" description:"Daemon RPC password" env:"DCRDATA_BTCD_PASS"`
-	BtcdServ string `long:"btcdserv" description:"Hostname/IP and port of btcd RPC server to connect to (default localhost:8334, testnet: localhost:18334, simnet: localhost:???)" env:"DCRDATA_BTCD_URL"`
-	BtcdCert string `long:"btcdcert" description:"File containing the btcd certificate file" env:"DCRDATA_BTCD_CERT"`
+	BtcdServ string `long:"btcdserv" description:"Hostname/IP and port of bitcoind RPC server to connect to (default localhost:8332, testnet: localhost:18332)" env:"DCRDATA_BTCD_URL"`
 	XmrServ  string `long:"xmrserv" description:"Endpoint of monerod RPC server to connect to (default localhost:18081/json_rpc)" env:"DCRDATA_MONEROD_URL"`
 	// ExchangeBot settings
 	EnableExchangeBot bool   `long:"exchange-monitor" description:"Enable the exchange monitor" env:"DCRDATA_MONITOR_EXCHANGES"`
@@ -253,8 +245,6 @@ var (
 		MaxCSVAddrs:         defaultMaxCSVAddrs,
 		ServerHeader:        defaultServerHeader,
 		DcrdCert:            defaultDaemonRPCCertFile,
-		LtcdCert:            defaultLTCDaemonRPCCertFile,
-		BtcdCert:            defaultBTCDaemonRPCCertFile,
 		XmrServ:             defaultXMRMainnetServer,
 		MempoolMinInterval:  defaultMempoolMinInterval,
 		MempoolMaxInterval:  defaultMempoolMaxInterval,
@@ -763,8 +753,6 @@ func loadConfig() (*config, error) {
 
 	// Expand some additional paths.
 	cfg.DcrdCert = cleanAndExpandPath(cfg.DcrdCert)
-	cfg.LtcdCert = cleanAndExpandPath(cfg.LtcdCert)
-	cfg.BtcdCert = cleanAndExpandPath(cfg.BtcdCert)
 	cfg.AgendasDBFileName = cleanAndExpandPath(cfg.AgendasDBFileName)
 	cfg.ProposalsFileName = cleanAndExpandPath(cfg.ProposalsFileName)
 	cfg.RateCertificate = cleanAndExpandPath(cfg.RateCertificate)
