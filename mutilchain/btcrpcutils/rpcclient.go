@@ -92,9 +92,9 @@ func NewAsyncTxClient(c *rpcclient.Client) *AsyncTxClient {
 }
 
 // DefaultRPCTimeout is the timeout for individual RPC calls to bitcoind.
-// If bitcoind becomes unresponsive, calls will fail after this duration
-// instead of blocking indefinitely.
-var DefaultRPCTimeout = 30 * time.Second
+// bitcoind HTTP RPC handles requests sequentially, so during block catch-up
+// when many concurrent requests are queued, individual calls may take longer.
+var DefaultRPCTimeout = 120 * time.Second
 
 var (
 	zeroHash = chainhash.Hash{}
