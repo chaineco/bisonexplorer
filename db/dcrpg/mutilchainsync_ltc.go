@@ -749,7 +749,7 @@ func (pgb *ChainDB) GetLTCBlockData(hash string, height int64) (*apitypes.Block2
 				unitAmount := int64(0)
 				//Get transaction by txin
 				txInResult, txinErr := ltcrpcutils.GetRawTransactionByTxidStr(pgb.LtcClient, txin.PreviousOutPoint.Hash.String())
-				if txinErr == nil {
+				if txinErr == nil && txInResult != nil {
 					unitAmount = dbtypes.GetLTCValueInFromRawTransction(txInResult, txin)
 					spent += unitAmount
 				}
@@ -949,6 +949,9 @@ func (pgb *ChainDB) SyncLTCAtomicSwapData(height int64) error {
 			if err != nil {
 				continue
 			}
+			if contractTx == nil {
+				continue
+			}
 			red.Value = contractTx.MsgTx().TxOut[red.ContractVout].Value
 			err = InsertLtcSwap(pgb.db, height, red)
 			if err != nil {
@@ -959,6 +962,9 @@ func (pgb *ChainDB) SyncLTCAtomicSwapData(height int64) error {
 		for _, ref := range swapRes.Refunds {
 			contractTx, err := pgb.GetLTCTransactionByHash(ref.ContractTx)
 			if err != nil {
+				continue
+			}
+			if contractTx == nil {
 				continue
 			}
 			ref.Value = contractTx.MsgTx().TxOut[ref.ContractVout].Value

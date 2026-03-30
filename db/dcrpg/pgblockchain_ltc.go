@@ -383,6 +383,9 @@ func (pgb *ChainDB) GetLTCDaemonTransaction(txid string) (*apitypes.MultichainTx
 		log.Errorf("GetLTCDaemonTransaction failed for %v: %v", txid, err)
 		return nil, err
 	}
+	if txraw == nil {
+		return nil, fmt.Errorf("GetLTCDaemonTransaction: nil result for %s", txid)
+	}
 	result := &apitypes.MultichainTxRaw{
 		Hex:           txraw.Hex,
 		Txid:          txraw.Txid,
@@ -451,6 +454,9 @@ func (pgb *ChainDB) GetLTCAllTxIn(txid string) ([]*apitypes.MultichainTxIn, erro
 		log.Warnf("[LTC] Unknown transaction %s", txid)
 		return nil, err
 	}
+	if tx == nil {
+		return nil, fmt.Errorf("[LTC] nil transaction result for %s", txid)
+	}
 	txins := tx.Vin
 	allTxIn := make([]*apitypes.MultichainTxIn, 0, len(txins))
 	for _, txin := range txins {
@@ -484,6 +490,9 @@ func (pgb *ChainDB) GetLTCAllTxOut(txid string) ([]*apitypes.MultichainTxOut, er
 	if err != nil {
 		log.Warnf("[LTC] Unknown transaction %s", txid)
 		return nil, err
+	}
+	if tx == nil {
+		return nil, fmt.Errorf("[LTC] nil transaction result for %s", txid)
 	}
 	txouts := tx.Vout
 	allTxOut := make([]*apitypes.MultichainTxOut, 0, len(txouts))
@@ -824,6 +833,9 @@ func (pgb *ChainDB) LtcTxResult(txhash *ltc_chainhash.Hash) (*ltcjson.TxRawResul
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("LTC: GetRawTransactionVerbose failed for %v: %w", txhash, err)
+	}
+	if txraw == nil {
+		return nil, 0, fmt.Errorf("LTC: nil result for GetRawTransactionVerbose %v", txhash)
 	}
 	var blockHeight int64
 	if txraw.BlockHash != "" {
