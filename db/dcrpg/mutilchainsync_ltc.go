@@ -713,6 +713,10 @@ func (pgb *ChainDB) GetLTCBlockData(hash string, height int64) (*apitypes.Block2
 	yeserDayTimeInt := time.Now().Add(-24 * time.Hour).Unix()
 	//Get block verbose
 	blockData := pgb.GetLTCBlockVerboseTxByHash(hash)
+	if blockData == nil {
+		log.Errorf("LTC: GetLTCBlockData: failed to get block verbose tx for hash %s", hash)
+		return nil, true
+	}
 	if blockData.Time < yeserDayTimeInt {
 		return nil, true
 	}
