@@ -402,10 +402,18 @@ func (pgb *ChainDB) StoreBTCBlockInfo(client *btcClient.Client, msgBlock *btcwir
 	errReg := <-resChanReg
 	dbBlock.NumVins = uint32(errReg.numVins)
 	dbBlock.NumVouts = uint32(errReg.numVouts)
-	dbBlock.Fees = uint64(errReg.fees)
+	if errReg.fees < 0 {
+		dbBlock.Fees = 0
+	} else {
+		dbBlock.Fees = uint64(errReg.fees)
+	}
 	numVins = errReg.numVins
 	numVouts = errReg.numVouts
-	dbBlock.TotalSent = uint64(errReg.totalSent)
+	if errReg.totalSent < 0 {
+		dbBlock.TotalSent = 0
+	} else {
+		dbBlock.TotalSent = uint64(errReg.totalSent)
+	}
 	// Store the block now that it has all it's transaction PK IDs
 	_, err = InsertMutilchainBlock(dbtx, dbBlock, true, pgb.btcDupChecks, mutilchain.TYPEBTC)
 	if err != nil {
@@ -437,10 +445,18 @@ func (pgb *ChainDB) UpdateStoreBTCBlockInfo(client *btcClient.Client, msgBlock *
 	errReg := <-resChanReg
 	dbBlock.NumVins = uint32(errReg.numVins)
 	dbBlock.NumVouts = uint32(errReg.numVouts)
-	dbBlock.Fees = uint64(errReg.fees)
+	if errReg.fees < 0 {
+		dbBlock.Fees = 0
+	} else {
+		dbBlock.Fees = uint64(errReg.fees)
+	}
 	numVins = errReg.numVins
 	numVouts = errReg.numVouts
-	dbBlock.TotalSent = uint64(errReg.totalSent)
+	if errReg.totalSent < 0 {
+		dbBlock.TotalSent = 0
+	} else {
+		dbBlock.TotalSent = uint64(errReg.totalSent)
+	}
 	// Store the block now that it has all it's transaction PK IDs
 	_, err = UpdateMutilchainBlock(pgb.db, dbBlock, true, mutilchain.TYPEBTC)
 	if err != nil {
