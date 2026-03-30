@@ -3357,7 +3357,7 @@ func (pionex *PionexExchange) Refresh() {
 			response := new(PionexCandlestickResponse)
 			err := pionex.fetch(req, response)
 			if err != nil {
-				log.Errorf("Error retrieving candlestick data from mexc for bin size %s: %v", string(bin), err)
+				log.Errorf("Error retrieving candlestick data from pionex for bin size %s: %v", string(bin), err)
 				continue
 			}
 			sticks := response.translate()
@@ -3445,7 +3445,7 @@ func (xt *XtExchange) Refresh() {
 			response := new(XtCandlestickResponse)
 			err := xt.fetch(req, response)
 			if err != nil {
-				log.Errorf("Error retrieving candlestick data from mexc for bin size %s: %v", string(bin), err)
+				log.Errorf("Error retrieving candlestick data from xt for bin size %s: %v", string(bin), err)
 				continue
 			}
 			sticks := response.translate()
@@ -3674,7 +3674,7 @@ func (kucoin *KucoinExchange) Refresh() {
 			response := new(KucoinCandlestickResponse)
 			err := kucoin.fetch(req, response)
 			if err != nil {
-				log.Errorf("Error retrieving candlestick data from binance for bin size %s: %v", string(bin), err)
+				log.Errorf("Error retrieving candlestick data from kucoin for bin size %s: %v", string(bin), err)
 				continue
 			}
 			sticks := response.translate()
