@@ -258,7 +258,7 @@ func (pgb *ChainDB) UpdateLTCChainState(blockChainInfo *ltcjson.GetBlockChainInf
 		return
 	}
 	if blockChainInfo == nil {
-		log.Errorf("chainjson.GetBlockChainInfoResult data passed is empty")
+		// Expected during block catch-up when the block is not the chain tip.
 		return
 	}
 

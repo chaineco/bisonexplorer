@@ -389,8 +389,16 @@ func (pgb *ChainDB) StoreLTCBlock(client *ltcClient.Client, msgBlock *wire.MsgBl
 	numVouts = txRes.numVouts
 	dbBlock.NumVins = uint32(numVins)
 	dbBlock.NumVouts = uint32(numVouts)
-	dbBlock.Fees = uint64(txRes.fees)
-	dbBlock.TotalSent = uint64(txRes.totalSent)
+	if txRes.fees < 0 {
+		dbBlock.Fees = 0
+	} else {
+		dbBlock.Fees = uint64(txRes.fees)
+	}
+	if txRes.totalSent < 0 {
+		dbBlock.TotalSent = 0
+	} else {
+		dbBlock.TotalSent = uint64(txRes.totalSent)
+	}
 	// Store the block now that it has all it's transaction PK IDs
 	var blockDbID uint64
 	blockDbID, err = InsertMutilchainBlock(dbtx, dbBlock, isValid, pgb.ltcDupChecks, mutilchain.TYPELTC)
@@ -579,8 +587,16 @@ func (pgb *ChainDB) StoreLTCWholeBlock(client *ltcClient.Client, msgBlock *wire.
 	numVouts = txRes.numVouts
 	dbBlock.NumVins = uint32(numVins)
 	dbBlock.NumVouts = uint32(numVouts)
-	dbBlock.Fees = uint64(txRes.fees)
-	dbBlock.TotalSent = uint64(txRes.totalSent)
+	if txRes.fees < 0 {
+		dbBlock.Fees = 0
+	} else {
+		dbBlock.Fees = uint64(txRes.fees)
+	}
+	if txRes.totalSent < 0 {
+		dbBlock.TotalSent = 0
+	} else {
+		dbBlock.TotalSent = uint64(txRes.totalSent)
+	}
 	// Store the block now that it has all it's transaction PK IDs
 	_, err = InsertMutilchainWholeBlock(dbtx, dbBlock, true, conflictCheck, mutilchain.TYPELTC)
 	if err != nil {
