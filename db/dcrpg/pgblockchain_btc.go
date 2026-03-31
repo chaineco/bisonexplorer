@@ -791,21 +791,17 @@ func (pgb *ChainDB) GetBTCExplorerBlocks(start int, end int) []*exptypes.BlockBa
 	count := start - end
 	summaries := make([]*exptypes.BlockBasic, count)
 
-	// Fetch all blocks concurrently to avoid sequential RPC bottleneck.
-	var wg sync.WaitGroup
+	// Fetch blocks sequentially. bitcoind HTTP RPC processes requests
+	// sequentially, so concurrent requests just queue up and cause timeouts.
 	for idx := 0; idx < count; idx++ {
-		wg.Add(1)
-		go func(slot, height int) {
-			defer wg.Done()
-			data := pgb.GetBTCBlockVerboseTx(height)
-			block := new(exptypes.BlockBasic)
-			if data != nil {
-				block = makeBTCExplorerBlockBasic(data)
-			}
-			summaries[slot] = block
-		}(idx, start-idx)
+		height := start - idx
+		data := pgb.GetBTCBlockVerboseTx(height)
+		block := new(exptypes.BlockBasic)
+		if data != nil {
+			block = makeBTCExplorerBlockBasic(data)
+		}
+		summaries[idx] = block
 	}
-	wg.Wait()
 	return summaries
 }
 
