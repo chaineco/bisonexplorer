@@ -737,15 +737,16 @@ func (pgb *ChainDB) GetLTCBlockData(hash string, height int64) (*apitypes.Block2
 		return nil, true
 	}
 
+	blockTxs := ltcBlockTxs(blockData)
 	block := &apitypes.Block24hData{
 		BlockHash:   blockData.Hash,
 		BlockHeight: blockData.Height,
 		BlockTime:   dbtypes.NewTimeDef(time.Unix(blockData.Time, 0)),
-		NumTx:       int64(len(blockData.RawTx)),
+		NumTx:       int64(len(blockTxs)),
 	}
 
 	var totalSent, totalSpent, totalFees, numVin, numVout int64
-	for _, tx := range blockData.RawTx {
+	for _, tx := range blockTxs {
 		msgTx, err := txhelpers.MsgLTCTxFromHex(tx.Hex, int32(tx.Version))
 		if err != nil {
 			log.Errorf("LTC: Unknown transaction %s: %v", tx.Txid, err)

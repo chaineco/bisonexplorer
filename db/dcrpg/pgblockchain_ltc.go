@@ -530,15 +530,25 @@ func (pgb *ChainDB) GetLTCBlockVerboseTx(idx int) *ltcjson.GetBlockVerboseTxResu
 	return block
 }
 
+// ltcBlockTxs returns the transaction list from a GetBlockVerboseTxResult.
+// litecoind populates the Tx field; ltcd used the deprecated RawTx field.
+func ltcBlockTxs(data *ltcjson.GetBlockVerboseTxResult) []ltcjson.TxRawResult {
+	if len(data.Tx) > 0 {
+		return data.Tx
+	}
+	return data.RawTx
+}
+
 // makeLTCExplorerBlockBasicFromTxResult creates a BlockBasic from LTC block data with params.
 func makeLTCExplorerBlockBasicFromTxResult(data *ltcjson.GetBlockVerboseTxResult, params *ltc_chaincfg.Params) *exptypes.BlockBasic {
+	txs := ltcBlockTxs(data)
 	total := float64(0)
-	for _, tx := range data.RawTx {
+	for _, tx := range txs {
 		for _, vout := range tx.Vout {
 			total += vout.Value
 		}
 	}
-	numReg := len(data.RawTx)
+	numReg := len(txs)
 
 	block := &exptypes.BlockBasic{
 		Height:         data.Height,
@@ -560,13 +570,14 @@ func makeLTCExplorerBlockBasicFromTxResult(data *ltcjson.GetBlockVerboseTxResult
 
 // makeLTCExplorerBlockBasic creates a BlockBasic from LTC block data.
 func makeLTCExplorerBlockBasic(data *ltcjson.GetBlockVerboseTxResult) *exptypes.BlockBasic {
+	txs := ltcBlockTxs(data)
 	total := float64(0)
-	for _, tx := range data.RawTx {
+	for _, tx := range txs {
 		for _, vout := range tx.Vout {
 			total += vout.Value
 		}
 	}
-	numReg := len(data.RawTx)
+	numReg := len(txs)
 
 	block := &exptypes.BlockBasic{
 		Height:         data.Height,
@@ -748,7 +759,8 @@ func (pgb *ChainDB) GetLTCExplorerBlock(hash string) *exptypes.BlockInfo {
 	}
 
 	// Pre-fetch all previous transactions referenced by inputs in this block concurrently.
-	prevTxCache := prefetchLTCPrevTxs(pgb.LtcClient, data.RawTx)
+	blockTxs := ltcBlockTxs(data)
+	prevTxCache := prefetchLTCPrevTxs(pgb.LtcClient, blockTxs)
 
 	txs := make([]*exptypes.TrimmedTxInfo, 0, block.Transactions)
 	txids := make([]string, 0)
@@ -756,8 +768,8 @@ func (pgb *ChainDB) GetLTCExplorerBlock(hash string) *exptypes.BlockInfo {
 	totalFees := float64(0)
 	totalNumVins := int64(0)
 	totalNumVouts := int64(0)
-	for i := range data.RawTx {
-		tx := &data.RawTx[i]
+	for i := range blockTxs {
+		tx := &blockTxs[i]
 		msgTx, err := txhelpers.MsgLTCTxFromHex(tx.Hex, int32(tx.Version))
 		if err != nil {
 			log.Errorf("Unknown transaction %s: %v", tx.Txid, err)

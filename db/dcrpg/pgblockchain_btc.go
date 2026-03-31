@@ -541,15 +541,25 @@ func (pgb *ChainDB) GetBTCBlockVerboseTx(idx int) *btcjson.GetBlockVerboseTxResu
 	return block
 }
 
+// btcBlockTxs returns the transaction list from a GetBlockVerboseTxResult.
+// bitcoind populates the Tx field; btcd used the deprecated RawTx field.
+func btcBlockTxs(data *btcjson.GetBlockVerboseTxResult) []btcjson.TxRawResult {
+	if len(data.Tx) > 0 {
+		return data.Tx
+	}
+	return data.RawTx
+}
+
 // makeBTCExplorerBlockBasic creates a BlockBasic from BTC block data.
 func makeBTCExplorerBlockBasic(data *btcjson.GetBlockVerboseTxResult) *exptypes.BlockBasic {
+	txs := btcBlockTxs(data)
 	total := float64(0)
-	for _, tx := range data.RawTx {
+	for _, tx := range txs {
 		for _, vout := range tx.Vout {
 			total += vout.Value
 		}
 	}
-	numReg := len(data.RawTx)
+	numReg := len(txs)
 
 	block := &exptypes.BlockBasic{
 		Height:         data.Height,
@@ -731,7 +741,8 @@ func (pgb *ChainDB) GetBTCExplorerBlock(hash string) *exptypes.BlockInfo {
 	}
 
 	// Pre-fetch all previous transactions referenced by inputs in this block concurrently.
-	prevTxCache := prefetchBTCPrevTxs(pgb.BtcClient, data.RawTx)
+	blockTxs := btcBlockTxs(data)
+	prevTxCache := prefetchBTCPrevTxs(pgb.BtcClient, blockTxs)
 
 	txs := make([]*exptypes.TrimmedTxInfo, 0, block.Transactions)
 	txIds := make([]string, 0)
@@ -739,8 +750,8 @@ func (pgb *ChainDB) GetBTCExplorerBlock(hash string) *exptypes.BlockInfo {
 	totalFees := float64(0)
 	totalNumVins := int64(0)
 	totalNumVouts := int64(0)
-	for i := range data.RawTx {
-		tx := &data.RawTx[i]
+	for i := range blockTxs {
+		tx := &blockTxs[i]
 		msgTx, err := txhelpers.MsgBTCTxFromHex(tx.Hex, int32(tx.Version))
 		if err != nil {
 			log.Errorf("Unknown transaction %s: %v", tx.Txid, err)
