@@ -869,6 +869,10 @@ func (psh *PubSubHub) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgBl
 func (psh *PubSubHub) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btcwire.MsgBlock) error {
 	// Retrieve block data for the passed block hash.
 	newBlockData := psh.sourceBase.GetBTCExplorerBlock(msgBlock.BlockHash().String())
+	if newBlockData == nil {
+		log.Errorf("BTC: failed to get explorer block data for %s", msgBlock.BlockHash().String())
+		return fmt.Errorf("BTC: failed to get explorer block data")
+	}
 	// Use the latest block's blocktime to get the last 24hr timestamp.
 	// day := 24 * time.Hour
 	targetTimePerBlock := float64(psh.btcParams.TargetTimePerBlock)
@@ -954,6 +958,10 @@ func (psh *PubSubHub) XMRStore(blockData *xmrutil.BlockData) error {
 func (psh *PubSubHub) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltcwire.MsgBlock) error {
 	// Retrieve block data for the passed block hash.
 	newBlockData := psh.sourceBase.GetLTCExplorerBlock(msgBlock.BlockHash().String())
+	if newBlockData == nil {
+		log.Errorf("LTC: failed to get explorer block data for %s", msgBlock.BlockHash().String())
+		return fmt.Errorf("LTC: failed to get explorer block data")
+	}
 	// Use the latest block's blocktime to get the last 24hr timestamp.
 	// day := 24 * time.Hour
 	targetTimePerBlock := float64(psh.ltcParams.TargetTimePerBlock)

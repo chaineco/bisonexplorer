@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	btc_chaincfg "github.com/btcsuite/btcd/chaincfg"
 	btc_chainhash "github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -53,6 +54,7 @@ import (
 	"github.com/decred/dcrdata/v8/txhelpers"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/lib/pq"
+	ltcjson "github.com/ltcsuite/ltcd/btcjson"
 	ltc_chaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	ltc_chainhash "github.com/ltcsuite/ltcd/chaincfg/chainhash"
 	"github.com/ltcsuite/ltcd/ltcutil"
@@ -9054,11 +9056,14 @@ func (pgb *ChainDB) GetMultichainBlockTxCount(height int64, chainType string) (i
 		if err != nil {
 			return 0, err
 		}
-		data := pgb.GetBTCBlockVerboseTxByHash(hash.String())
-		if data == nil {
-			return 0, fmt.Errorf("get btc block verbose tx by hash failed")
+		// Use GetBlockVerbose (without tx details) which is much faster
+		blockVerbose, err := btcrpcutils.WithTimeout(func() (*btcjson.GetBlockVerboseResult, error) {
+			return pgb.BtcClient.GetBlockVerbose(hash)
+		})
+		if err != nil || blockVerbose == nil {
+			return 0, fmt.Errorf("get btc block verbose failed for height %d", height)
 		}
-		return len(data.RawTx), nil
+		return len(blockVerbose.Tx), nil
 	case mutilchain.TYPELTC:
 		hash, err := ltcrpcutils.WithTimeout(func() (*ltc_chainhash.Hash, error) {
 			return pgb.LtcClient.GetBlockHash(height)
@@ -9066,11 +9071,14 @@ func (pgb *ChainDB) GetMultichainBlockTxCount(height int64, chainType string) (i
 		if err != nil {
 			return 0, err
 		}
-		data := pgb.GetLTCBlockVerboseTxByHash(hash.String())
-		if data == nil {
-			return 0, fmt.Errorf("get ltc block verbose tx by hash failed")
+		// Use GetBlockVerbose (without tx details) which is much faster
+		blockVerbose, err := ltcrpcutils.WithTimeout(func() (*ltcjson.GetBlockVerboseResult, error) {
+			return pgb.LtcClient.GetBlockVerbose(hash)
+		})
+		if err != nil || blockVerbose == nil {
+			return 0, fmt.Errorf("get ltc block verbose failed for height %d", height)
 		}
-		return len(data.RawTx), nil
+		return len(blockVerbose.Tx), nil
 	}
 	return 0, nil
 }
