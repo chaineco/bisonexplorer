@@ -4,7 +4,7 @@
 {{- $botState := .XcState -}}
 <!DOCTYPE html>
 <html lang="en">
-{{ template "html-head" headData .CommonPageData (printf "%s Explorer by bisonexplorer.com" (chainName $ChainType))}}
+{{ template "html-head" headData .CommonPageData (printf "%s Explorer by %s" (chainName $ChainType) .CommonPageData.Host)}}
 {{ template "new_chainhome_navbar" . }}
 <div class="d-flex justify-content-between ai-end new-home-header container py-2 px-2 px-lg-0" id="newHomeMenu">
    <div class="d-none d-md-flex mb-sm-0">

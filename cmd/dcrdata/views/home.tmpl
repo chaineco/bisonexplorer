@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 {{- $botState := .XcState -}}
 <html lang="en">
-{{ template "html-head" headData .CommonPageData "Mutilple Blockchains Explorer by bisonexplorer.com"}}
+{{ template "html-head" headData .CommonPageData (printf "Multi-Blockchain Explorer by %s" .CommonPageData.Host)}}
 {{ template "top_navbar" . }}
 <div class="main-container homepage-class" data-controller="time top" data-top-active-chain="{{.ActiveChain}}">
    <!-- start explorer wrap -->
