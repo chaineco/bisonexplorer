@@ -2141,7 +2141,9 @@ func _main(ctx context.Context) error {
 			}
 		}
 		// sync atomic swap for btc
-		chainDB.SyncBTCAtomicSwap()
+		if !btcDisabled {
+			chainDB.SyncBTCAtomicSwap()
+		}
 	}()
 
 	go func() {
@@ -2172,7 +2174,9 @@ func _main(ctx context.Context) error {
 			}
 		}
 		// sync atomic swap for ltc
-		chainDB.SyncLTCAtomicSwap()
+		if !ltcDisabled {
+			chainDB.SyncLTCAtomicSwap()
+		}
 	}()
 
 	//Start sync 24h metrics

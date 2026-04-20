@@ -898,6 +898,9 @@ func (pgb *ChainDB) SyncOneBTCWholeBlock(client *btcClient.Client, msgBlock *btc
 }
 
 func (pgb *ChainDB) SyncBTCAtomicSwap() error {
+	if pgb.BtcClient == nil {
+		return nil
+	}
 	// Get list of unsynchronized btc blocks atomic swap transaction
 	var btcSyncHeights []int64
 	rows, err := pgb.db.QueryContext(pgb.ctx, mutilchainquery.MakeSelectBlocksUnsynchoronized(mutilchain.TYPEBTC))
@@ -929,6 +932,9 @@ func (pgb *ChainDB) SyncBTCAtomicSwap() error {
 }
 
 func (pgb *ChainDB) SyncBTCAtomicSwapData(height int64) error {
+	if pgb.BtcClient == nil {
+		return nil
+	}
 	log.Debugf("Start Sync BTC swap data with height: %d", height)
 	blockhash, err := btcrpcutils.WithTimeout(func() (*btcchainhash.Hash, error) {
 		return pgb.BtcClient.GetBlockHash(height)

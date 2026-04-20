@@ -902,6 +902,9 @@ func (pgb *ChainDB) SyncLTCWholeChain(newIndexes bool) {
 }
 
 func (pgb *ChainDB) SyncLTCAtomicSwap() error {
+	if pgb.LtcClient == nil {
+		return nil
+	}
 	// Get list of unsynchronized ltc blocks atomic swap transaction
 	var ltcSyncHeights []int64
 	rows, err := pgb.db.QueryContext(pgb.ctx, mutilchainquery.MakeSelectBlocksUnsynchoronized(mutilchain.TYPELTC))
@@ -933,6 +936,9 @@ func (pgb *ChainDB) SyncLTCAtomicSwap() error {
 }
 
 func (pgb *ChainDB) SyncLTCAtomicSwapData(height int64) error {
+	if pgb.LtcClient == nil {
+		return nil
+	}
 	log.Debugf("Start Sync LTC swap data with height: %d", height)
 	blockhash, err := ltcrpcutils.WithTimeout(func() (*ltcchainhash.Hash, error) {
 		return pgb.LtcClient.GetBlockHash(height)
