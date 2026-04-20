@@ -1448,10 +1448,19 @@ func (pgb *ChainDB) Height() int64 {
 func (pgb *ChainDB) MutilchainHeight(chainType string) int64 {
 	switch chainType {
 	case mutilchain.TYPELTC:
+		if pgb.LtcBestBlock == nil {
+			return 0
+		}
 		return pgb.LtcBestBlock.MutilchainHeight()
 	case mutilchain.TYPEBTC:
+		if pgb.BtcBestBlock == nil {
+			return 0
+		}
 		return pgb.BtcBestBlock.MutilchainHeight()
 	case mutilchain.TYPEXMR:
+		if pgb.XmrBestBlock == nil {
+			return 0
+		}
 		return pgb.XmrBestBlock.MutilchainHeight()
 	default:
 		return pgb.bestBlock.Height()

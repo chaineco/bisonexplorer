@@ -2946,6 +2946,10 @@ func (exp *ExplorerUI) MutilchainAddressPage(w http.ResponseWriter, r *http.Requ
 	if chainType == "" {
 		return
 	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
+		return
+	}
 	type AddressPageData struct {
 		*CommonPageData
 		Data      *dbtypes.AddressInfo
