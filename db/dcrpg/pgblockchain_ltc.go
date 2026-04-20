@@ -38,6 +38,9 @@ func (pgb *ChainDB) UseLTCMempoolChecker(mp ltcrpcutils.MempoolAddressChecker) {
 
 // LTCBestBlock returns the best Litecoin block hash and height.
 func (pgb *ChainDB) LTCBestBlock() (*ltc_chainhash.Hash, int64) {
+	if pgb.LtcClient == nil {
+		return nil, 0
+	}
 	if pgb.LtcBestBlock == nil {
 		return nil, 0
 	}
@@ -54,6 +57,9 @@ func (pgb *ChainDB) CheckCreateLtcSwapsTable() (err error) {
 
 // GetLTCSwapFullDataByContractTx returns atomic swap data for a LTC contract transaction.
 func (pgb *ChainDB) GetLTCSwapFullDataByContractTx(contractTx, groupTx string) ([]*dbtypes.AtomicSwapTxData, error) {
+	if pgb.LtcClient == nil {
+		return nil, fmt.Errorf("LTC client not available")
+	}
 	rows, err := pgb.db.QueryContext(pgb.ctx, internal.SelectLTCAtomicSpendsByContractTx, contractTx, groupTx)
 	if err != nil {
 		return nil, err
@@ -113,6 +119,9 @@ func (pgb *ChainDB) GetLTCSwapFullDataByContractTx(contractTx, groupTx string) (
 
 // GetLTCAtomicSwapTarget returns atomic swap detail of LTC.
 func (pgb *ChainDB) GetLTCAtomicSwapTarget(groupTx string) (*dbtypes.AtomicSwapForTokenData, error) {
+	if pgb.LtcClient == nil {
+		return nil, fmt.Errorf("LTC client not available")
+	}
 	// Phase 1: Collect all contract rows from DB.
 	rows, err := pgb.db.QueryContext(pgb.ctx, internal.SelectLTCContractListByGroupTx, groupTx)
 	if err != nil {
@@ -285,6 +294,9 @@ func (pgb *ChainDB) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltcwir
 	if pgb == nil || pgb.LtcBestBlock == nil {
 		return nil
 	}
+	if pgb.LtcClient == nil {
+		return fmt.Errorf("LTC client not available")
+	}
 	// update blockchain state
 	pgb.UpdateLTCChainState(blockData.BlockchainInfo)
 	if !pgb.ChainDBDisabled {
@@ -355,6 +367,9 @@ func (pgb *ChainDB) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltcwir
 
 // GetLTCBlockByHash returns the height of a LTC block by its hash.
 func (pgb *ChainDB) GetLTCBlockByHash(hash string) (int64, error) {
+	if pgb.LtcClient == nil {
+		return 0, fmt.Errorf("LTC client not available")
+	}
 	blockHash, err := ltc_chainhash.NewHashFromStr(hash)
 	if err != nil {
 		log.Errorf("LTC: Invalid block hash %s", hash)
@@ -372,6 +387,9 @@ func (pgb *ChainDB) GetLTCBlockByHash(hash string) (int64, error) {
 
 // GetLTCDaemonTransaction gets an *apitypes.MultichainTxRaw for a given LTC transaction ID.
 func (pgb *ChainDB) GetLTCDaemonTransaction(txid string) (*apitypes.MultichainTxRaw, error) {
+	if pgb.LtcClient == nil {
+		return nil, fmt.Errorf("LTC client not available")
+	}
 	txHash, err := ltc_chainhash.NewHashFromStr(txid)
 	if err != nil {
 		return nil, err
@@ -443,6 +461,9 @@ func (pgb *ChainDB) GetLTCDaemonTransaction(txid string) (*apitypes.MultichainTx
 
 // GetLTCAllTxIn gets all Litecoin transaction inputs for a transaction.
 func (pgb *ChainDB) GetLTCAllTxIn(txid string) ([]*apitypes.MultichainTxIn, error) {
+	if pgb.LtcClient == nil {
+		return nil, fmt.Errorf("LTC client not available")
+	}
 	txhash, err := ltc_chainhash.NewHashFromStr(txid)
 	if err != nil {
 		return nil, err
@@ -480,6 +501,9 @@ func (pgb *ChainDB) GetLTCAllTxIn(txid string) ([]*apitypes.MultichainTxIn, erro
 
 // GetLTCAllTxOut gets all Litecoin transaction outputs for a transaction.
 func (pgb *ChainDB) GetLTCAllTxOut(txid string) ([]*apitypes.MultichainTxOut, error) {
+	if pgb.LtcClient == nil {
+		return nil, fmt.Errorf("LTC client not available")
+	}
 	txhash, err := ltc_chainhash.NewHashFromStr(txid)
 	if err != nil {
 		return nil, err
@@ -520,6 +544,9 @@ func (pgb *ChainDB) GetLTCChainParams() *ltc_chaincfg.Params {
 
 // GetLTCBlockVerbose fetches the *ltcjson.GetBlockVerboseResult for a given block height.
 func (pgb *ChainDB) GetLTCBlockVerbose(idx int) *ltcjson.GetBlockVerboseResult {
+	if pgb.LtcClient == nil {
+		return nil
+	}
 	block := ltcrpcutils.GetBlockVerbose(pgb.LtcClient, int64(idx))
 	return block
 }
@@ -856,6 +883,9 @@ func (pgb *ChainDB) GetLTCExplorerBlocks(start int, end int) []*exptypes.BlockBa
 
 // LtcTxResult returns the raw LTC transaction result and block height.
 func (pgb *ChainDB) LtcTxResult(txhash *ltc_chainhash.Hash) (*ltcjson.TxRawResult, int64, error) {
+	if pgb.LtcClient == nil {
+		return nil, 0, fmt.Errorf("LTC client not available")
+	}
 	txraw, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
 		return pgb.LtcClient.GetRawTransactionVerbose(txhash)
 	})
@@ -1099,6 +1129,9 @@ func (pgb *ChainDB) SignalLTCHeight(height uint32) {
 
 // GetLTCBlockHashTime returns the hash and timestamp of a LTC block by height.
 func (pgb *ChainDB) GetLTCBlockHashTime(height int32) (string, int64, error) {
+	if pgb.LtcClient == nil {
+		return "", 0, fmt.Errorf("LTC client not available")
+	}
 	blockhash, err := ltcrpcutils.WithTimeout(func() (*ltc_chainhash.Hash, error) {
 		return pgb.LtcClient.GetBlockHash(int64(height))
 	})
@@ -1116,6 +1149,9 @@ func (pgb *ChainDB) GetLTCBlockHashTime(height int32) (string, int64, error) {
 
 // GetLTCBestBlock retrieves the best LTC block from the node.
 func (pgb *ChainDB) GetLTCBestBlock() error {
+	if pgb.LtcClient == nil {
+		return fmt.Errorf("LTC client not available")
+	}
 	type bestBlockResult struct {
 		hash   *ltc_chainhash.Hash
 		height int32

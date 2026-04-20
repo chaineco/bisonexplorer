@@ -38,6 +38,9 @@ func (pgb *ChainDB) UseBTCMempoolChecker(mp btcrpcutils.MempoolAddressChecker) {
 
 // BTCBestBlock returns the best Bitcoin block hash and height.
 func (pgb *ChainDB) BTCBestBlock() (*btc_chainhash.Hash, int64) {
+	if pgb.BtcClient == nil {
+		return nil, 0
+	}
 	if pgb.BtcBestBlock == nil {
 		return nil, 0
 	}
@@ -54,6 +57,9 @@ func (pgb *ChainDB) CheckCreateBtcSwapsTable() (err error) {
 
 // GetBTCSwapFullDataByContractTx returns atomic swap data for a BTC contract transaction.
 func (pgb *ChainDB) GetBTCSwapFullDataByContractTx(contractTx, groupTx string) ([]*dbtypes.AtomicSwapTxData, error) {
+	if pgb.BtcClient == nil {
+		return nil, fmt.Errorf("BTC client not available")
+	}
 	rows, err := pgb.db.QueryContext(pgb.ctx, internal.SelectBTCAtomicSpendsByContractTx, contractTx, groupTx)
 	if err != nil {
 		return nil, err
@@ -113,6 +119,9 @@ func (pgb *ChainDB) GetBTCSwapFullDataByContractTx(contractTx, groupTx string) (
 
 // GetBTCAtomicSwapTarget return atomic swap detail of BTC
 func (pgb *ChainDB) GetBTCAtomicSwapTarget(groupTx string) (*dbtypes.AtomicSwapForTokenData, error) {
+	if pgb.BtcClient == nil {
+		return nil, fmt.Errorf("BTC client not available")
+	}
 	// Phase 1: Collect all contract rows from DB.
 	rows, err := pgb.db.QueryContext(pgb.ctx, internal.SelectBTCContractListByGroupTx, groupTx)
 	if err != nil {
@@ -285,6 +294,9 @@ func (pgb *ChainDB) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btcwir
 	if pgb == nil || pgb.BtcBestBlock == nil {
 		return nil
 	}
+	if pgb.BtcClient == nil {
+		return fmt.Errorf("BTC client not available")
+	}
 
 	// update blockchain state
 	pgb.UpdateBTCChainState(blockData.BlockchainInfo)
@@ -365,6 +377,9 @@ func (pgb *ChainDB) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btcwir
 }
 
 func (pgb *ChainDB) GetBTCBlockByHash(hash string) (int64, error) {
+	if pgb.BtcClient == nil {
+		return 0, fmt.Errorf("BTC client not available")
+	}
 	blockHash, err := btc_chainhash.NewHashFromStr(hash)
 	if err != nil {
 		log.Errorf("BTC: Invalid block hash %s", hash)
@@ -382,6 +397,9 @@ func (pgb *ChainDB) GetBTCBlockByHash(hash string) (int64, error) {
 
 // GetBTCDaemonTransaction gets an *apitypes.Tx for a given btc transaction ID.
 func (pgb *ChainDB) GetBTCDaemonTransaction(txid string) (*apitypes.MultichainTxRaw, error) {
+	if pgb.BtcClient == nil {
+		return nil, fmt.Errorf("BTC client not available")
+	}
 	txHash, err := btc_chainhash.NewHashFromStr(txid)
 	if err != nil {
 		return nil, err
@@ -453,6 +471,9 @@ func (pgb *ChainDB) GetBTCDaemonTransaction(txid string) (*apitypes.MultichainTx
 
 // GetBTCAllTxIn get Bitcoin txouts for tx
 func (pgb *ChainDB) GetBTCAllTxIn(txid string) ([]*apitypes.MultichainTxIn, error) {
+	if pgb.BtcClient == nil {
+		return nil, fmt.Errorf("BTC client not available")
+	}
 	txhash, err := btc_chainhash.NewHashFromStr(txid)
 	if err != nil {
 		return nil, err
@@ -490,6 +511,9 @@ func (pgb *ChainDB) GetBTCAllTxIn(txid string) ([]*apitypes.MultichainTxIn, erro
 
 // GetBTCAllTxOut gets all Bitcoin transaction outputs for a transaction.
 func (pgb *ChainDB) GetBTCAllTxOut(txid string) ([]*apitypes.MultichainTxOut, error) {
+	if pgb.BtcClient == nil {
+		return nil, fmt.Errorf("BTC client not available")
+	}
 	txhash, err := btc_chainhash.NewHashFromStr(txid)
 	if err != nil {
 		return nil, err
@@ -531,6 +555,9 @@ func (pgb *ChainDB) GetBTCChainParams() *btc_chaincfg.Params {
 
 // GetBTCBlockVerbose fetches the *btcjson.GetBlockVerboseResult for a given block height.
 func (pgb *ChainDB) GetBTCBlockVerbose(idx int) *btcjson.GetBlockVerboseResult {
+	if pgb.BtcClient == nil {
+		return nil
+	}
 	block := btcrpcutils.GetBlockVerbose(pgb.BtcClient, int64(idx))
 	return block
 }
@@ -696,6 +723,10 @@ func trimmedBTCTxInfoFromMsgTx(client *btcClient.Client, txraw *btcjson.TxRawRes
 // GetBTCContractInfo extracts atomic swap contract information from a BTC spend transaction.
 func (pgb *ChainDB) GetBTCContractInfo(spendTx string, spendVin uint32) (contractAddr, recipientAddr,
 	refundAddr string, contractScript []byte, isRefund bool, err error) {
+	if pgb.BtcClient == nil {
+		err = fmt.Errorf("BTC client not available")
+		return
+	}
 	var tx *btcutil.Tx
 	tx, err = pgb.GetBTCTransactionByHash(spendTx)
 	if err != nil {
@@ -859,7 +890,7 @@ func (pgb *ChainDB) BtcTxResult(txhash *btc_chainhash.Hash) (*btcjson.TxRawResul
 // GetBTCExplorerTx returns detailed transaction information for the explorer.
 func (pgb *ChainDB) GetBTCExplorerTx(txid string) *exptypes.TxInfo {
 	if pgb.BtcClient == nil {
-		return &exptypes.TxInfo{}
+		return nil
 	}
 	txhash, err := btc_chainhash.NewHashFromStr(txid)
 	if err != nil {
@@ -1049,6 +1080,9 @@ func (pgb *ChainDB) GetBTCExplorerTx(txid string) *exptypes.TxInfo {
 
 // BTCDifficulty returns the Bitcoin difficulty for a given timestamp.
 func (pgb *ChainDB) BTCDifficulty(timestamp int64) float64 {
+	if pgb.BtcClient == nil {
+		return 0
+	}
 	pgb.btcLastExplorerBlock.Lock()
 	diff, ok := pgb.btcLastExplorerBlock.difficulties[timestamp]
 	pgb.btcLastExplorerBlock.Unlock()
@@ -1083,6 +1117,9 @@ func (pgb *ChainDB) SignalBTCHeight(height uint32) {
 
 // GetBTCBlockHashTime returns the hash and timestamp of a BTC block by height.
 func (pgb *ChainDB) GetBTCBlockHashTime(height int32) (string, int64, error) {
+	if pgb.BtcClient == nil {
+		return "", 0, fmt.Errorf("BTC client not available")
+	}
 	blockhash, err := btcrpcutils.WithTimeout(func() (*btc_chainhash.Hash, error) {
 		return pgb.BtcClient.GetBlockHash(int64(height))
 	})
@@ -1100,6 +1137,9 @@ func (pgb *ChainDB) GetBTCBlockHashTime(height int32) (string, int64, error) {
 
 // GetBTCBestBlock retrieves the best BTC block from the node.
 func (pgb *ChainDB) GetBTCBestBlock() error {
+	if pgb.BtcClient == nil {
+		return fmt.Errorf("BTC client not available")
+	}
 	type bestBlockResult struct {
 		hash   *btc_chainhash.Hash
 		height int32
