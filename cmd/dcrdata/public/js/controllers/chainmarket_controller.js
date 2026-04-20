@@ -627,8 +627,9 @@ export default class extends Controller {
     this.isHomepage = !window.location.href.includes('/market')
     this.chainType = this.data.get('chainType')
     if (!this.chainType || this.chainType === '') {
-      // set default to max volume blockchain
-      this.chainType = 'btc'
+      // Default to first available option in the market-chart dropdown.
+      const firstMarketOpt = $('.market-chart-vodiapicker option').first().val()
+      this.chainType = firstMarketOpt || 'btc'
     }
     globalChainType = this.chainType
     this.setExchaneLinks()

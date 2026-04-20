@@ -1178,7 +1178,10 @@ export default class extends Controller {
     baseSubsidy = parseInt(this.data.get('bs'))
     subsidyInterval = parseInt(this.data.get('sri'))
     subsidyExponent = parseFloat(this.data.get('mulSubsidy')) / parseFloat(this.data.get('divSubsidy'))
-    this.chainType = 'btc'
+    // Default to first available option in the chain-chart dropdown.
+    // Falls back to 'btc' if the select isn't ready yet.
+    const firstChartOpt = $('.chain-chart-vodiapicker option').first().val()
+    this.chainType = firstChartOpt || 'btc'
     // init for avgBlockTime
     const _this = this
     chainList.forEach((chain, idx) => {
