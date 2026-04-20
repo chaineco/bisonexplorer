@@ -1570,7 +1570,7 @@
                                  <select class="chart-box d-inline-flex" data-market-target="pairSelect"
                                     data-action="change->market#changePair">
                                     <option value="usdt" selected>DCR/USDT</option>
-                                    <option value="btc">DCR/BTC</option>
+                                    {{if not (index .CommonPageData.ChainDisabledMap "btc")}}<option value="btc">DCR/BTC</option>{{end}}
                                  </select>
                               </div>
                               {{- /* CHART TYPE SELECTION */ -}}

@@ -77,18 +77,19 @@ type CommonPageData struct {
 	ChainParams    *chaincfg.Params
 	BtcChainParams *btcchaincfg.Params
 	LtcChainParams *ltcchaincfg.Params
-	BlockTimeUnix  int64
-	DevAddress     string
-	Links          *links
-	NetName        string
-	Cookies        Cookies
-	Host           string
-	BaseURL        string // scheme + "://" + "host"
-	Path           string
-	RequestURI     string // path?query
-	IsHomepage     bool
-	IsToppage      bool
-	ChainType      string
+	BlockTimeUnix    int64
+	DevAddress       string
+	Links            *links
+	NetName          string
+	Cookies          Cookies
+	Host             string
+	BaseURL          string // scheme + "://" + "host"
+	Path             string
+	RequestURI       string // path?query
+	IsHomepage       bool
+	IsToppage        bool
+	ChainType        string
+	ChainDisabledMap map[string]bool
 }
 
 // FullURL constructs the page's complete URL.
@@ -4746,11 +4747,12 @@ func (exp *ExplorerUI) commonData(r *http.Request) *CommonPageData {
 		Cookies: Cookies{
 			DarkMode: darkMode != nil && darkMode.Value == "1",
 		},
-		ChainType:  chainType,
-		Host:       r.Host,
-		BaseURL:    baseURL,
-		Path:       r.URL.Path,
-		RequestURI: r.URL.RequestURI(),
+		ChainType:        chainType,
+		Host:             r.Host,
+		BaseURL:          baseURL,
+		Path:             r.URL.Path,
+		RequestURI:       r.URL.RequestURI(),
+		ChainDisabledMap: exp.ChainDisabledMap,
 	}
 }
 

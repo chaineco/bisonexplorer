@@ -72,10 +72,10 @@
 					   data-action="change->scroll#changeCoin"
 					   class="vodiapicker">
 					   <option name="dcr" value="dcr" class="test" data-thumbnail="/images/dcr-icons.png">Decred (DCR)</option>
-					   {{if eq .NetName "Mainnet"}} 
-					   <option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin (BTC)</option>
-					   <option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin (LTC)</option>
-					   <option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero (XMR)</option>
+					   {{if eq .NetName "Mainnet"}}
+					   {{if not (index .ChainDisabledMap "btc")}}<option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin (BTC)</option>{{end}}
+					   {{if not (index .ChainDisabledMap "ltc")}}<option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin (LTC)</option>{{end}}
+					   {{if not (index .ChainDisabledMap "xmr")}}<option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero (XMR)</option>{{end}}
 					   {{end}}
 					</select>
 					<div class="chain-select-area">
@@ -86,9 +86,9 @@
 						  <ul id="selectUl" class="chain-select-list">
 							 <li><img src="/images/dcr-icons.png" value="dcr"><span>Decred (DCR)</span></li>
 							 {{if eq .NetName "Mainnet"}}
-							 <li><img src="/images/btc-icons.png" value="btc"><span>Bitcoin (BTC)</span></li>
-							 <li><img src="/images/ltc-icons.png" value="ltc"><span>Litecoin (LTC)</span></li>
-							 <li><img src="/images/xmr-icons.png" value="xmr"><span>Monero (XMR)</span></li>
+							 {{if not (index .ChainDisabledMap "btc")}}<li><img src="/images/btc-icons.png" value="btc"><span>Bitcoin (BTC)</span></li>{{end}}
+							 {{if not (index .ChainDisabledMap "ltc")}}<li><img src="/images/ltc-icons.png" value="ltc"><span>Litecoin (LTC)</span></li>{{end}}
+							 {{if not (index .ChainDisabledMap "xmr")}}<li><img src="/images/xmr-icons.png" value="xmr"><span>Monero (XMR)</span></li>{{end}}
 							 {{end}}
 						  </ul>
 					   </div>
@@ -198,10 +198,10 @@
 						   data-action="change->scroll#changeCoin"
 						   class="vodiapicker">
 						   <option name="dcr" value="dcr" class="test" data-thumbnail="/images/dcr-icons.png">Decred (DCR)</option>
-						   {{if eq .NetName "Mainnet"}}  
-						   <option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin (BTC)</option>
-						   <option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin (LTC)</option>
-						   <option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero (XMR)</option>
+						   {{if eq .NetName "Mainnet"}}
+						   {{if not (index .ChainDisabledMap "btc")}}<option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin (BTC)</option>{{end}}
+						   {{if not (index .ChainDisabledMap "ltc")}}<option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin (LTC)</option>{{end}}
+						   {{if not (index .ChainDisabledMap "xmr")}}<option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero (XMR)</option>{{end}}
 						   {{end}}
 						</select>
 						<div class="chain-select-area">
@@ -212,9 +212,9 @@
 							  <ul id="selectUl" class="chain-select-list">
 								 <li><img src="/images/dcr-icons.png" value="dcr"><span>Decred (DCR)</span></li>
 								 {{if eq .NetName "Mainnet"}}
-								 <li><img src="/images/btc-icons.png" value="btc"><span>Bitcoin (BTC)</span></li>
-								 <li><img src="/images/ltc-icons.png" value="ltc"><span>Litecoin (LTC)</span></li>
-								 <li><img src="/images/xmr-icons.png" value="xmr"><span>Monero (XMR)</span></li>
+								 {{if not (index .ChainDisabledMap "btc")}}<li><img src="/images/btc-icons.png" value="btc"><span>Bitcoin (BTC)</span></li>{{end}}
+								 {{if not (index .ChainDisabledMap "ltc")}}<li><img src="/images/ltc-icons.png" value="ltc"><span>Litecoin (LTC)</span></li>{{end}}
+								 {{if not (index .ChainDisabledMap "xmr")}}<li><img src="/images/xmr-icons.png" value="xmr"><span>Monero (XMR)</span></li>{{end}}
 								 {{end}}
 							  </ul>
 						   </div>
@@ -270,10 +270,10 @@
 						   data-action="change->scroll#changeCoin"
 						   class="vodiapicker">
 						   <option name="dcr" value="dcr" class="test" data-thumbnail="/images/dcr-icons.png">Decred (DCR)</option>
-						   {{if eq .NetName "Mainnet"}}  
-						   <option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin (BTC)</option>
-						   <option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin (LTC)</option>
-						   <option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero (XMR)</option>
+						   {{if eq .NetName "Mainnet"}}
+						   {{if not (index .ChainDisabledMap "btc")}}<option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin (BTC)</option>{{end}}
+						   {{if not (index .ChainDisabledMap "ltc")}}<option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin (LTC)</option>{{end}}
+						   {{if not (index .ChainDisabledMap "xmr")}}<option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero (XMR)</option>{{end}}
 						   {{end}}
 						</select>
 						<div class="chain-select-area">
@@ -284,9 +284,9 @@
 							  <ul id="selectUl" class="chain-select-list">
 								 <li><img src="/images/dcr-icons.png" value="dcr"><span>Decred (DCR)</span></li>
 								 {{if eq .NetName "Mainnet"}}
-								 <li><img src="/images/btc-icons.png" value="btc"><span>Bitcoin (BTC)</span></li>
-								 <li><img src="/images/ltc-icons.png" value="ltc"><span>Litecoin (LTC)</span></li>
-								 <li><img src="/images/xmr-icons.png" value="xmr"><span>Monero (XMR)</span></li>
+								 {{if not (index .ChainDisabledMap "btc")}}<li><img src="/images/btc-icons.png" value="btc"><span>Bitcoin (BTC)</span></li>{{end}}
+								 {{if not (index .ChainDisabledMap "ltc")}}<li><img src="/images/ltc-icons.png" value="ltc"><span>Litecoin (LTC)</span></li>{{end}}
+								 {{if not (index .ChainDisabledMap "xmr")}}<li><img src="/images/xmr-icons.png" value="xmr"><span>Monero (XMR)</span></li>{{end}}
 								 {{end}}
 							  </ul>
 						   </div>
@@ -342,10 +342,10 @@
 					   data-action="change->scroll#changeCoin"
 					   class="vodiapicker">
 					   <option name="dcr" value="dcr" class="test" data-thumbnail="/images/dcr-icons.png">Decred (DCR)</option>
-					   {{if eq .NetName "Mainnet"}}  
-					   <option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin (BTC)</option>
-					   <option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin (LTC)</option>
-					   <option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero (XMR)</option>
+					   {{if eq .NetName "Mainnet"}}
+					   {{if not (index .ChainDisabledMap "btc")}}<option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin (BTC)</option>{{end}}
+					   {{if not (index .ChainDisabledMap "ltc")}}<option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin (LTC)</option>{{end}}
+					   {{if not (index .ChainDisabledMap "xmr")}}<option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero (XMR)</option>{{end}}
 					   {{end}}
 					</select>
 					<div class="chain-select-area">
@@ -356,9 +356,9 @@
 						  <ul id="selectUl" class="chain-select-list">
 							 <li><img src="/images/dcr-icons.png" value="dcr"><span>Decred (DCR)</span></li>
 							 {{if eq .NetName "Mainnet"}}
-							 <li><img src="/images/btc-icons.png" value="btc"><span>Bitcoin (BTC)</span></li>
-							 <li><img src="/images/ltc-icons.png" value="ltc"><span>Litecoin (LTC)</span></li>
-							 <li><img src="/images/xmr-icons.png" value="xmr"><span>Monero (XMR)</span></li>
+							 {{if not (index .ChainDisabledMap "btc")}}<li><img src="/images/btc-icons.png" value="btc"><span>Bitcoin (BTC)</span></li>{{end}}
+							 {{if not (index .ChainDisabledMap "ltc")}}<li><img src="/images/ltc-icons.png" value="ltc"><span>Litecoin (LTC)</span></li>{{end}}
+							 {{if not (index .ChainDisabledMap "xmr")}}<li><img src="/images/xmr-icons.png" value="xmr"><span>Monero (XMR)</span></li>{{end}}
 							 {{end}}
 						  </ul>
 					   </div>

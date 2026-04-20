@@ -130,8 +130,8 @@
             <select name="pair" data-atomicswaps-target="pair" data-action="change->atomicswaps#changePair"
               class="form-control-sm me-md-2 border-plain border-radius-8">
               <option selected value="all">All</option>
-              <option value="btc">DCR/BTC</option>
-              <option value="ltc">DCR/LTC</option>
+              {{if not (index .CommonPageData.ChainDisabledMap "btc")}}<option value="btc">DCR/BTC</option>{{end}}
+              {{if not (index .CommonPageData.ChainDisabledMap "ltc")}}<option value="ltc">DCR/LTC</option>{{end}}
               <option value="unknown">Verifying</option>
             </select>
             <label class="mb-0 ms-2 me-1" for="status">Status</label>
