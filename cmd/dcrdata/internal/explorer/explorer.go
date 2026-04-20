@@ -1032,33 +1032,30 @@ func (exp *ExplorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 func (exp *ExplorerUI) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btcwire.MsgBlock) error {
 	targetTimePerBlock := float64(exp.BtcChainParams.TargetTimePerBlock)
 
-	// --- Fetch independent data sources concurrently ---
-	var newBlockData *types.BlockInfo
-	var blockchainInfo *mutilchain.BlockchainInfo
-	var chainErr error
-	var blocks []*types.BlockInfo
-
-	var wg sync.WaitGroup
-
-	// Fetch explorer block data
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		newBlockData = exp.dataSource.GetBTCExplorerBlock(msgBlock.BlockHash().String())
-	}()
-
-	// Fetch blockchain info
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		blockchainInfo, chainErr = exp.dataSource.MutilchainGetBlockchainInfo(mutilchain.TYPEBTC)
-	}()
-
-	wg.Wait()
-
-	if newBlockData == nil {
-		return fmt.Errorf("BTC: failed to get explorer block data")
+	// Build a lightweight block info from the already-fetched blockData instead
+	// of calling GetBTCExplorerBlock which triggers thousands of RPC calls to
+	// prefetch previous transactions. The expensive data is fetched on-demand
+	// when the user visits the block page.
+	blockHash := msgBlock.BlockHash().String()
+	newBlockData := &types.BlockInfo{
+		BlockBasic: &types.BlockBasic{
+			Hash:          blockHash,
+			Height:        int64(blockData.Header.Height),
+			Size:          int32(msgBlock.SerializeSize()),
+			Valid:         true,
+			MainChain:     true,
+			TxCount:       uint32(len(msgBlock.Transactions)),
+			Transactions:  len(msgBlock.Transactions),
+			BlockTime:     types.NewTimeDefFromUNIX(blockData.Header.Time),
+			BlockTimeUnix: blockData.Header.Time,
+		},
+		PoWHash:    blockHash,
+		Difficulty: blockData.Header.Difficulty,
 	}
+
+	// Fetch blockchain info from the DB (fast).
+	blockchainInfo, chainErr := exp.dataSource.MutilchainGetBlockchainInfo(mutilchain.TYPEBTC)
+	var blocks []*types.BlockInfo
 
 	// Fetch full blocks (depends on newBlockData being ready)
 	blocks = exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPEBTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))
@@ -1350,33 +1347,30 @@ func (exp *ExplorerUI) XMRStore(blockData *xmrutil.BlockData) error {
 func (exp *ExplorerUI) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltcwire.MsgBlock) error {
 	targetTimePerBlock := float64(exp.LtcChainParams.TargetTimePerBlock)
 
-	// --- Fetch independent data sources concurrently ---
-	var newBlockData *types.BlockInfo
-	var blockchainInfo *mutilchain.BlockchainInfo
-	var chainErr error
-	var blocks []*types.BlockInfo
-
-	var wg sync.WaitGroup
-
-	// Fetch explorer block data
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		newBlockData = exp.dataSource.GetLTCExplorerBlock(msgBlock.BlockHash().String())
-	}()
-
-	// Fetch blockchain info
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		blockchainInfo, chainErr = exp.dataSource.MutilchainGetBlockchainInfo(mutilchain.TYPELTC)
-	}()
-
-	wg.Wait()
-
-	if newBlockData == nil {
-		return fmt.Errorf("LTC: failed to get explorer block data")
+	// Build a lightweight block info from the already-fetched blockData instead
+	// of calling GetLTCExplorerBlock which triggers thousands of RPC calls to
+	// prefetch previous transactions. The expensive data is fetched on-demand
+	// when the user visits the block page.
+	blockHash := msgBlock.BlockHash().String()
+	newBlockData := &types.BlockInfo{
+		BlockBasic: &types.BlockBasic{
+			Hash:          blockHash,
+			Height:        int64(blockData.Header.Height),
+			Size:          int32(msgBlock.SerializeSize()),
+			Valid:         true,
+			MainChain:     true,
+			TxCount:       uint32(len(msgBlock.Transactions)),
+			Transactions:  len(msgBlock.Transactions),
+			BlockTime:     types.NewTimeDefFromUNIX(blockData.Header.Time),
+			BlockTimeUnix: blockData.Header.Time,
+		},
+		PoWHash:    blockHash,
+		Difficulty: blockData.Header.Difficulty,
 	}
+
+	// Fetch blockchain info from the DB (fast).
+	blockchainInfo, chainErr := exp.dataSource.MutilchainGetBlockchainInfo(mutilchain.TYPELTC)
+	var blocks []*types.BlockInfo
 
 	// Fetch full blocks (depends on newBlockData being ready)
 	blocks = exp.dataSource.GetMutilchainExplorerFullBlocks(mutilchain.TYPELTC, int(newBlockData.Height)-MultichainHomepageBlocksMaxCount, int(newBlockData.Height))

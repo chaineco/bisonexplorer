@@ -867,11 +867,25 @@ func (psh *PubSubHub) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgBl
 }
 
 func (psh *PubSubHub) BTCStore(blockData *blockdatabtc.BlockData, msgBlock *btcwire.MsgBlock) error {
-	// Retrieve block data for the passed block hash.
-	newBlockData := psh.sourceBase.GetBTCExplorerBlock(msgBlock.BlockHash().String())
-	if newBlockData == nil {
-		log.Errorf("BTC: failed to get explorer block data for %s", msgBlock.BlockHash().String())
-		return fmt.Errorf("BTC: failed to get explorer block data")
+	// Build a lightweight block info from the already-fetched blockData instead
+	// of calling GetBTCExplorerBlock which triggers thousands of RPC calls to
+	// prefetch previous transactions. Fetched on-demand when a user visits the
+	// block page.
+	blockHash := msgBlock.BlockHash().String()
+	newBlockData := &exptypes.BlockInfo{
+		BlockBasic: &exptypes.BlockBasic{
+			Hash:          blockHash,
+			Height:        int64(blockData.Header.Height),
+			Size:          int32(msgBlock.SerializeSize()),
+			Valid:         true,
+			MainChain:     true,
+			TxCount:       uint32(len(msgBlock.Transactions)),
+			Transactions:  len(msgBlock.Transactions),
+			BlockTime:     exptypes.NewTimeDefFromUNIX(blockData.Header.Time),
+			BlockTimeUnix: blockData.Header.Time,
+		},
+		PoWHash:    blockHash,
+		Difficulty: blockData.Header.Difficulty,
 	}
 	// Use the latest block's blocktime to get the last 24hr timestamp.
 	// day := 24 * time.Hour
@@ -956,11 +970,25 @@ func (psh *PubSubHub) XMRStore(blockData *xmrutil.BlockData) error {
 // Store processes and stores new LTC block data, then signals to the WebSocketHub
 // that the new data is available.
 func (psh *PubSubHub) LTCStore(blockData *blockdataltc.BlockData, msgBlock *ltcwire.MsgBlock) error {
-	// Retrieve block data for the passed block hash.
-	newBlockData := psh.sourceBase.GetLTCExplorerBlock(msgBlock.BlockHash().String())
-	if newBlockData == nil {
-		log.Errorf("LTC: failed to get explorer block data for %s", msgBlock.BlockHash().String())
-		return fmt.Errorf("LTC: failed to get explorer block data")
+	// Build a lightweight block info from the already-fetched blockData instead
+	// of calling GetLTCExplorerBlock which triggers thousands of RPC calls to
+	// prefetch previous transactions. Fetched on-demand when a user visits the
+	// block page.
+	blockHash := msgBlock.BlockHash().String()
+	newBlockData := &exptypes.BlockInfo{
+		BlockBasic: &exptypes.BlockBasic{
+			Hash:          blockHash,
+			Height:        int64(blockData.Header.Height),
+			Size:          int32(msgBlock.SerializeSize()),
+			Valid:         true,
+			MainChain:     true,
+			TxCount:       uint32(len(msgBlock.Transactions)),
+			Transactions:  len(msgBlock.Transactions),
+			BlockTime:     exptypes.NewTimeDefFromUNIX(blockData.Header.Time),
+			BlockTimeUnix: blockData.Header.Time,
+		},
+		PoWHash:    blockHash,
+		Difficulty: blockData.Header.Difficulty,
 	}
 	// Use the latest block's blocktime to get the last 24hr timestamp.
 	// day := 24 * time.Hour
