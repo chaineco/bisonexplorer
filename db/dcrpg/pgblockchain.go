@@ -54,6 +54,7 @@ import (
 	"github.com/decred/dcrdata/v8/txhelpers"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/lib/pq"
+	"golang.org/x/sync/singleflight"
 	ltcjson "github.com/ltcsuite/ltcd/btcjson"
 	ltc_chaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	ltc_chainhash "github.com/ltcsuite/ltcd/chaincfg/chainhash"
@@ -372,6 +373,10 @@ type ChainDB struct {
 	xmrWholeSyncMtx           sync.Mutex
 	btc20BlocksSyncMtx        sync.Mutex
 	ltc20BlocksSyncMtx        sync.Mutex
+	// Singleflight groups deduplicate concurrent requests for the same block
+	// to prevent goroutine pile-ups from multiple user requests.
+	btcExplorerBlockFlight singleflight.Group
+	ltcExplorerBlockFlight singleflight.Group
 }
 
 // ChainDeployments is mutex-protected blockchain deployment data.

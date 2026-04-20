@@ -628,7 +628,8 @@ func prefetchLTCPrevTxs(client *ltcClient.Client, rawTxs []ltcjson.TxRawResult) 
 	// Fetch concurrently with limited workers
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
+	// litecoind HTTP RPC processes requests sequentially; keep concurrency low.
+	sem := make(chan struct{}, 4)
 
 	for txid := range needed {
 		wg.Add(1)
@@ -738,6 +739,19 @@ func (pgb *ChainDB) GetLTCExplorerBlock(hash string) *exptypes.BlockInfo {
 	}
 	pgb.ltcLastExplorerBlock.Unlock()
 
+	// Deduplicate concurrent requests for the same block hash to prevent
+	// goroutine pile-ups.
+	v, _, _ := pgb.ltcExplorerBlockFlight.Do(hash, func() (interface{}, error) {
+		return pgb.fetchLTCExplorerBlock(hash), nil
+	})
+	if v == nil {
+		return nil
+	}
+	block, _ := v.(*exptypes.BlockInfo)
+	return block
+}
+
+func (pgb *ChainDB) fetchLTCExplorerBlock(hash string) *exptypes.BlockInfo {
 	data := pgb.GetLTCBlockVerboseTxByHash(hash)
 	if data == nil {
 		log.Error("Unable to get block for block hash " + hash)

@@ -610,7 +610,9 @@ func prefetchBTCPrevTxs(client *btcClient.Client, rawTxs []btcjson.TxRawResult) 
 	// Fetch concurrently with limited workers
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
+	// bitcoind HTTP RPC processes requests sequentially; keep concurrency low
+	// to avoid saturating the connection and timing out.
+	sem := make(chan struct{}, 4)
 
 	for txid := range needed {
 		wg.Add(1)
@@ -720,6 +722,20 @@ func (pgb *ChainDB) GetBTCExplorerBlock(hash string) *exptypes.BlockInfo {
 	}
 	pgb.btcLastExplorerBlock.Unlock()
 
+	// Deduplicate concurrent requests for the same block hash to prevent
+	// goroutine pile-ups. Multiple callers waiting for the same hash will
+	// share the single in-flight computation.
+	v, _, _ := pgb.btcExplorerBlockFlight.Do(hash, func() (interface{}, error) {
+		return pgb.fetchBTCExplorerBlock(hash), nil
+	})
+	if v == nil {
+		return nil
+	}
+	block, _ := v.(*exptypes.BlockInfo)
+	return block
+}
+
+func (pgb *ChainDB) fetchBTCExplorerBlock(hash string) *exptypes.BlockInfo {
 	data := pgb.GetBTCBlockVerboseTxByHash(hash)
 	if data == nil {
 		log.Error("Unable to get block for block hash " + hash)
