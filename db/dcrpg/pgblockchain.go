@@ -1511,10 +1511,19 @@ func (pgb *ChainDB) GetMutilchainBestBlock(chainType string) (int64, string) {
 func (pgb *ChainDB) MutilchainBestBlockTime(chainType string) int64 {
 	switch chainType {
 	case mutilchain.TYPELTC:
+		if pgb.LtcBestBlock == nil {
+			return 0
+		}
 		return pgb.LtcBestBlock.MutilchainTime()
 	case mutilchain.TYPEBTC:
+		if pgb.BtcBestBlock == nil {
+			return 0
+		}
 		return pgb.BtcBestBlock.MutilchainTime()
 	case mutilchain.TYPEXMR:
+		if pgb.XmrBestBlock == nil {
+			return 0
+		}
 		return pgb.XmrBestBlock.MutilchainTime()
 	default:
 		return 0
@@ -1535,18 +1544,27 @@ func (block *BestBlock) HeightHash() (int64, string) {
 }
 
 func (block *MutilchainBestBlock) MutilchainHeight() int64 {
+	if block == nil {
+		return 0
+	}
 	block.Mtx.RLock()
 	defer block.Mtx.RUnlock()
 	return block.Height
 }
 
 func (block *MutilchainBestBlock) MutilchainHeightHash() (int64, string) {
+	if block == nil {
+		return 0, ""
+	}
 	block.Mtx.RLock()
 	defer block.Mtx.RUnlock()
 	return block.Height, block.Hash
 }
 
 func (block *MutilchainBestBlock) MutilchainTime() int64 {
+	if block == nil {
+		return 0
+	}
 	block.Mtx.RLock()
 	defer block.Mtx.RUnlock()
 	return block.Time
@@ -8460,12 +8478,18 @@ func (pgb *ChainDB) GetBlockVerbose(idx int, verboseTx bool) *chainjson.GetBlock
 func (pgb *ChainDB) GetDaemonMutilchainBlockHash(idx int64, chainType string) (string, error) {
 	switch chainType {
 	case mutilchain.TYPELTC:
+		if pgb.LtcClient == nil {
+			return "", fmt.Errorf("LTC client not available")
+		}
 		hashObj, err := pgb.LtcClient.GetBlockHash(idx)
 		if err != nil {
 			return "", err
 		}
 		return hashObj.String(), nil
 	case mutilchain.TYPEBTC:
+		if pgb.BtcClient == nil {
+			return "", fmt.Errorf("BTC client not available")
+		}
 		hashObj, err := pgb.BtcClient.GetBlockHash(idx)
 		if err != nil {
 			return "", err
@@ -9183,6 +9207,9 @@ func (pgb *ChainDB) txWithTicketPrice(txhash *chainhash.Hash) (*chainjson.TxRawR
 func (pgb *ChainDB) GetMutilchainMempoolTxTime(txid string, chainType string) int64 {
 	switch chainType {
 	case mutilchain.TYPEBTC:
+		if pgb.BtcClient == nil {
+			return 0
+		}
 		mempoolTxsMap, err := pgb.BtcClient.GetRawMempoolVerbose()
 		if err == nil {
 			mempoolTx, exist := mempoolTxsMap[txid]
@@ -9191,6 +9218,9 @@ func (pgb *ChainDB) GetMutilchainMempoolTxTime(txid string, chainType string) in
 			}
 		}
 	case mutilchain.TYPELTC:
+		if pgb.LtcClient == nil {
+			return 0
+		}
 		mempoolTxsMap, err := pgb.LtcClient.GetRawMempoolVerbose()
 		if err == nil {
 			mempoolTx, exist := mempoolTxsMap[txid]

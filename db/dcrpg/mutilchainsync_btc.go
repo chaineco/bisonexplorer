@@ -201,6 +201,9 @@ func (db *ChainDB) SyncBTCChainDB(client *btcClient.Client, quit chan struct{},
 }
 
 func (pgb *ChainDB) SyncLast20BTCBlocks(nodeHeight int32) error {
+	if pgb.BtcClient == nil {
+		return nil
+	}
 	if !pgb.btc20BlocksSyncMtx.TryLock() {
 		log.Debugf("BTC last 20 blocks sync already running, skipping")
 		return nil
@@ -782,6 +785,9 @@ func (pgb *ChainDB) GetBTCBlockData(hash string, height int64) (*apitypes.Block2
 }
 
 func (pgb *ChainDB) SyncBTCWholeChain(newIndexes bool) {
+	if pgb.BtcClient == nil || pgb.BtcBestBlock == nil {
+		return
+	}
 	pgb.btcWholeSyncMtx.Lock()
 	defer pgb.btcWholeSyncMtx.Unlock()
 

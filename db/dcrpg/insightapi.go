@@ -6,6 +6,7 @@ package dcrpg
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -32,6 +33,9 @@ import (
 
 // GetLTCTransactionByHash gets a wire.MsgTx for the specified transaction hash.
 func (pgb *ChainDB) GetLTCTransactionByHash(txid string) (*ltcutil.Tx, error) {
+	if pgb.LtcClient == nil {
+		return nil, fmt.Errorf("LTC client not available")
+	}
 	txhash, err := ltcchainhash.NewHashFromStr(txid)
 	if err != nil {
 		return nil, err
@@ -47,6 +51,9 @@ func (pgb *ChainDB) GetLTCTransactionByHash(txid string) (*ltcutil.Tx, error) {
 
 // GetBTCTransactionByHash gets a wire.MsgTx for the specified transaction hash.
 func (pgb *ChainDB) GetBTCTransactionByHash(txid string) (*btcutil.Tx, error) {
+	if pgb.BtcClient == nil {
+		return nil, fmt.Errorf("BTC client not available")
+	}
 	txhash, err := btcchainhash.NewHashFromStr(txid)
 	if err != nil {
 		return nil, err
@@ -201,6 +208,9 @@ func (pgb *ChainDB) GetMultichainTransactionHex(txid, chainType string) string {
 
 // GetBTCTxHex return btc transaction hex from txid
 func (pgb *ChainDB) GetBTCTxHex(txid string) string {
+	if pgb.BtcClient == nil {
+		return ""
+	}
 	txhash, err := btcchainhash.NewHashFromStr(txid)
 	if err != nil {
 		log.Errorf("New BTC hash failed: %v", err)
@@ -209,7 +219,7 @@ func (pgb *ChainDB) GetBTCTxHex(txid string) string {
 	tx, err := btcrpcutils.WithTimeout(func() (*btcjson.TxRawResult, error) {
 		return pgb.BtcClient.GetRawTransactionVerbose(txhash)
 	})
-	if err != nil {
+	if err != nil || tx == nil {
 		log.Errorf("Get BTC transaction verbose failed: %v", err)
 		return ""
 	}
@@ -218,6 +228,9 @@ func (pgb *ChainDB) GetBTCTxHex(txid string) string {
 
 // GetLTCTxHex return ltc transaction hex from txid
 func (pgb *ChainDB) GetLTCTxHex(txid string) string {
+	if pgb.LtcClient == nil {
+		return ""
+	}
 	txhash, err := ltcchainhash.NewHashFromStr(txid)
 	if err != nil {
 		log.Errorf("New LTC hash failed: %v", err)
@@ -226,7 +239,7 @@ func (pgb *ChainDB) GetLTCTxHex(txid string) string {
 	tx, err := ltcrpcutils.WithTimeout(func() (*ltcjson.TxRawResult, error) {
 		return pgb.LtcClient.GetRawTransactionVerbose(txhash)
 	})
-	if err != nil {
+	if err != nil || tx == nil {
 		log.Errorf("Get LTC transaction verbose failed: %v", err)
 		return ""
 	}
@@ -303,6 +316,9 @@ func (pgb *ChainDB) GetLTCBlockVerboseTxByHash(hash string) *ltcjson.GetBlockVer
 // GetBlockVerboseByHash returns a *chainjson.GetBlockVerboseResult for the
 // specified block hash, optionally with transaction details.
 func (pgb *ChainDB) GetBTCBlockVerboseByHash(hash string) *btcjson.GetBlockVerboseResult {
+	if pgb.BtcClient == nil {
+		return nil
+	}
 	blockhash, err := btcchainhash.NewHashFromStr(hash)
 	if err != nil {
 		log.Errorf("Invalid block hash %s", hash)

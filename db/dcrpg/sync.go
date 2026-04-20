@@ -1687,6 +1687,9 @@ func (pgb *ChainDB) SyncMultichainMetaInfo(btcDisabled, ltcDisabled bool) (err e
 }
 
 func (pgb *ChainDB) SyncBTCMetaInfo() error {
+	if pgb.BtcClient == nil || pgb.BtcBestBlock == nil {
+		return nil
+	}
 	if !pgb.multichainBtcMetaInfoSync.TryLock() {
 		log.Debugf("BTC meta info sync already running, skipping")
 		return nil
@@ -1733,6 +1736,9 @@ func (pgb *ChainDB) SyncBTCMetaInfo() error {
 }
 
 func (pgb *ChainDB) SyncLTCMetaInfo() error {
+	if pgb.LtcClient == nil || pgb.LtcBestBlock == nil {
+		return nil
+	}
 	if !pgb.multichainLtcMetaInfoSync.TryLock() {
 		log.Debugf("LTC meta info sync already running, skipping")
 		return nil

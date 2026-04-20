@@ -202,6 +202,9 @@ func (db *ChainDB) SyncLTCChainDB(client *ltcClient.Client, quit chan struct{},
 }
 
 func (pgb *ChainDB) SyncLast20LTCBlocks(nodeHeight int32) error {
+	if pgb.LtcClient == nil {
+		return nil
+	}
 	if !pgb.ltc20BlocksSyncMtx.TryLock() {
 		log.Debugf("LTC last 20 blocks sync already running, skipping")
 		return nil
@@ -793,6 +796,9 @@ func (pgb *ChainDB) SyncOneLTCWholeBlock(client *ltcClient.Client, msgBlock *wir
 }
 
 func (pgb *ChainDB) SyncLTCWholeChain(newIndexes bool) {
+	if pgb.LtcClient == nil || pgb.LtcBestBlock == nil {
+		return
+	}
 	pgb.ltcWholeSyncMtx.Lock()
 	defer pgb.ltcWholeSyncMtx.Unlock()
 	// get remaining heights

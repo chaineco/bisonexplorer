@@ -589,6 +589,10 @@ func (exp *ExplorerUI) MutilchainHome(w http.ResponseWriter, r *http.Request) {
 	if chainType == "" {
 		return
 	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
+		return
+	}
 	height, err := exp.dataSource.GetMutilchainHeight(chainType)
 	if err != nil {
 		log.Errorf("GetMutilchainHeight failed: %v", err)
@@ -1179,6 +1183,10 @@ func (exp *ExplorerUI) MutilchainBlocks(w http.ResponseWriter, r *http.Request) 
 	if chainType == "" {
 		return
 	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
+		return
+	}
 	bestBlockHeight, err := exp.dataSource.GetMutilchainHeight(chainType)
 	if err != nil {
 		log.Errorf("GetHeight failed: %v", err)
@@ -1470,6 +1478,10 @@ func (exp *ExplorerUI) MutilchainTxPage(w http.ResponseWriter, r *http.Request) 
 	if chainType == "" {
 		return
 	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
+		return
+	}
 	if chainType != mutilchain.TYPEXMR {
 		validTransaction := exp.IsValidTransaction(hash, chainType)
 		if !validTransaction {
@@ -1733,6 +1745,10 @@ func (exp *ExplorerUI) MutilchainBlockDetail(w http.ResponseWriter, r *http.Requ
 	if chainType == "" {
 		return
 	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
+		return
+	}
 	limitN := defaultAddressRows
 	if nParam := r.URL.Query().Get("rows"); nParam != "" {
 		val, err := strconv.ParseUint(nParam, 10, 64)
@@ -1977,6 +1993,10 @@ func (exp *ExplorerUI) Mempool(w http.ResponseWriter, r *http.Request) {
 func (exp *ExplorerUI) MutilchainMempool(w http.ResponseWriter, r *http.Request) {
 	chainType := chi.URLParam(r, "chaintype")
 	if chainType == "" {
+		return
+	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
 		return
 	}
 	// Safely retrieve the inventory pointer, which can be reset in StoreMPData.
@@ -3043,6 +3063,10 @@ func (exp *ExplorerUI) MutilchainAddressTable(w http.ResponseWriter, r *http.Req
 	if chainType == "" {
 		return
 	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
+		return
+	}
 
 	addrData, err := exp.MutilchainAddressListData(address, txnType, limitN, offsetAddrOuts, chainType)
 	if err != nil {
@@ -3576,6 +3600,10 @@ func (exp *ExplorerUI) MutilchainCharts(w http.ResponseWriter, r *http.Request) 
 	if chainType == "" {
 		return
 	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
+		return
+	}
 	str, err := exp.templates.exec("chain_charts", struct {
 		*CommonPageData
 		ChainType          string
@@ -4073,6 +4101,10 @@ func (exp *ExplorerUI) AboutPage(w http.ResponseWriter, r *http.Request) {
 func (exp *ExplorerUI) MutilchainParametersPage(w http.ResponseWriter, r *http.Request) {
 	chainType := chi.URLParam(r, "chaintype")
 	if chainType == "" {
+		return
+	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
 		return
 	}
 	var chainParams any
@@ -4637,6 +4669,10 @@ func (exp *ExplorerUI) MarketPage(w http.ResponseWriter, r *http.Request) {
 func (exp *ExplorerUI) MutilchainMarketPage(w http.ResponseWriter, r *http.Request) {
 	chainType := chi.URLParam(r, "chaintype")
 	if chainType == "" {
+		return
+	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
 		return
 	}
 	allXcState := exp.getExchangeState()
