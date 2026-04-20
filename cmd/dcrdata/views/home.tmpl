@@ -267,10 +267,10 @@
                                                 <select data-chainmarket-target="chainTypeSelected"
                                                    data-action="change->chainmarket#chainTypeChange"
                                                    class="top-vodiapicker market-chart-vodiapicker">
-                                                   {{if not (index .CommonPageData.ChainDisabledMap "btc")}}<option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin</option>{{end}}
-                                                   {{if not (index .CommonPageData.ChainDisabledMap "ltc")}}<option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin</option>{{end}}
-                                                   {{if not (index .CommonPageData.ChainDisabledMap "xmr")}}<option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero</option>{{end}}
-                                                   <option name="dcr" value="dcr" class="test"
+                                                   {{if not (index .CommonPageData.ChainDisabledMap "btc")}}<option name="btc" value="btc" selected data-thumbnail="/images/btc-icons.png">Bitcoin</option>{{end}}
+                                                   {{if not (index .CommonPageData.ChainDisabledMap "ltc")}}<option name="ltc" value="ltc" {{if (index .CommonPageData.ChainDisabledMap "btc")}}selected{{end}} data-thumbnail="/images/ltc-icons.png">Litecoin</option>{{end}}
+                                                   {{if not (index .CommonPageData.ChainDisabledMap "xmr")}}<option name="xmr" value="xmr" {{if and (index .CommonPageData.ChainDisabledMap "btc") (index .CommonPageData.ChainDisabledMap "ltc")}}selected{{end}} data-thumbnail="/images/xmr-icons.png">Monero</option>{{end}}
+                                                   <option name="dcr" value="dcr" class="test" {{if and (and (index .CommonPageData.ChainDisabledMap "btc") (index .CommonPageData.ChainDisabledMap "ltc")) (index .CommonPageData.ChainDisabledMap "xmr")}}selected{{end}}
                                                       data-thumbnail="/images/dcr-icons.png">Decred</option>
                                                 </select>
                                                 <div class="top-chain-select-area">
@@ -494,10 +494,10 @@
                                              <select data-homecharts-target="chainTypeSelected"
                                                 data-action="change->homecharts#chainTypeChange"
                                                 class="top-vodiapicker chain-chart-vodiapicker">
-                                                {{if not (index .CommonPageData.ChainDisabledMap "btc")}}<option name="btc" value="btc" data-thumbnail="/images/btc-icons.png">Bitcoin</option>{{end}}
-                                                {{if not (index .CommonPageData.ChainDisabledMap "ltc")}}<option name="ltc" value="ltc" data-thumbnail="/images/ltc-icons.png">Litecoin</option>{{end}}
-                                                {{if not (index .CommonPageData.ChainDisabledMap "xmr")}}<option name="xmr" value="xmr" data-thumbnail="/images/xmr-icons.png">Monero</option>{{end}}
-                                                <option name="dcr" value="dcr" class="test"
+                                                {{if not (index .CommonPageData.ChainDisabledMap "btc")}}<option name="btc" value="btc" selected data-thumbnail="/images/btc-icons.png">Bitcoin</option>{{end}}
+                                                {{if not (index .CommonPageData.ChainDisabledMap "ltc")}}<option name="ltc" value="ltc" {{if (index .CommonPageData.ChainDisabledMap "btc")}}selected{{end}} data-thumbnail="/images/ltc-icons.png">Litecoin</option>{{end}}
+                                                {{if not (index .CommonPageData.ChainDisabledMap "xmr")}}<option name="xmr" value="xmr" {{if and (index .CommonPageData.ChainDisabledMap "btc") (index .CommonPageData.ChainDisabledMap "ltc")}}selected{{end}} data-thumbnail="/images/xmr-icons.png">Monero</option>{{end}}
+                                                <option name="dcr" value="dcr" class="test" {{if and (and (index .CommonPageData.ChainDisabledMap "btc") (index .CommonPageData.ChainDisabledMap "ltc")) (index .CommonPageData.ChainDisabledMap "xmr")}}selected{{end}}
                                                    data-thumbnail="/images/dcr-icons.png">Decred</option>
                                              </select>
                                              <div class="top-chain-select-area">
