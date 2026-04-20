@@ -537,6 +537,9 @@ func (pgb *ChainDB) GetBTCBlockVerbose(idx int) *btcjson.GetBlockVerboseResult {
 
 // GetBTCBlockVerboseTx fetches the *btcjson.GetBlockVerboseTxResult for a given block height.
 func (pgb *ChainDB) GetBTCBlockVerboseTx(idx int) *btcjson.GetBlockVerboseTxResult {
+	if pgb.BtcClient == nil {
+		return nil
+	}
 	block := btcrpcutils.GetBlockVerboseTx(pgb.BtcClient, int64(idx))
 	return block
 }
@@ -715,6 +718,9 @@ func (pgb *ChainDB) GetBTCContractInfo(spendTx string, spendVin uint32) (contrac
 
 // GetBTCExplorerBlock returns detailed block information for the explorer.
 func (pgb *ChainDB) GetBTCExplorerBlock(hash string) *exptypes.BlockInfo {
+	if pgb.BtcClient == nil {
+		return nil
+	}
 	pgb.btcLastExplorerBlock.Lock()
 	if pgb.btcLastExplorerBlock.hash == hash {
 		defer pgb.btcLastExplorerBlock.Unlock()

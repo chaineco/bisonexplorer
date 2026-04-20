@@ -526,6 +526,9 @@ func (pgb *ChainDB) GetLTCBlockVerbose(idx int) *ltcjson.GetBlockVerboseResult {
 
 // GetLTCBlockVerboseTx fetches the *ltcjson.GetBlockVerboseTxResult for a given block height.
 func (pgb *ChainDB) GetLTCBlockVerboseTx(idx int) *ltcjson.GetBlockVerboseTxResult {
+	if pgb.LtcClient == nil {
+		return nil
+	}
 	block := ltcrpcutils.GetBlockVerboseTx(pgb.LtcClient, int64(idx))
 	return block
 }
@@ -732,6 +735,9 @@ func (pgb *ChainDB) GetLTCContractInfo(spendTx string, spendVin uint32) (contrac
 
 // GetLTCExplorerBlock returns detailed block information for the explorer.
 func (pgb *ChainDB) GetLTCExplorerBlock(hash string) *exptypes.BlockInfo {
+	if pgb.LtcClient == nil {
+		return nil
+	}
 	pgb.ltcLastExplorerBlock.Lock()
 	if pgb.ltcLastExplorerBlock.hash == hash {
 		defer pgb.ltcLastExplorerBlock.Unlock()

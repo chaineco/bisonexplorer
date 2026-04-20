@@ -9055,6 +9055,9 @@ func (pgb *ChainDB) GetMutilchainExplorerBlock(hash, chainType string) *exptypes
 func (pgb *ChainDB) GetMultichainBlockTxCount(height int64, chainType string) (int, error) {
 	switch chainType {
 	case mutilchain.TYPEBTC:
+		if pgb.BtcClient == nil {
+			return 0, fmt.Errorf("BTC client not available")
+		}
 		hash, err := btcrpcutils.WithTimeout(func() (*btc_chainhash.Hash, error) {
 			return pgb.BtcClient.GetBlockHash(height)
 		})
@@ -9070,6 +9073,9 @@ func (pgb *ChainDB) GetMultichainBlockTxCount(height int64, chainType string) (i
 		}
 		return len(blockVerbose.Tx), nil
 	case mutilchain.TYPELTC:
+		if pgb.LtcClient == nil {
+			return 0, fmt.Errorf("LTC client not available")
+		}
 		hash, err := ltcrpcutils.WithTimeout(func() (*ltc_chainhash.Hash, error) {
 			return pgb.LtcClient.GetBlockHash(height)
 		})

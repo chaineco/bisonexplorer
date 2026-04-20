@@ -285,11 +285,17 @@ func (pgb *ChainDB) MutilchainValidTxhash(hash string, chainType string) bool {
 }
 
 func (pgb *ChainDB) GetBTCBlockVerboseTxByHash(hash string) *btcjson.GetBlockVerboseTxResult {
+	if pgb.BtcClient == nil {
+		return nil
+	}
 	block := btcrpcutils.GetBlockVerboseTxByHash(pgb.BtcClient, hash)
 	return block
 }
 
 func (pgb *ChainDB) GetLTCBlockVerboseTxByHash(hash string) *ltcjson.GetBlockVerboseTxResult {
+	if pgb.LtcClient == nil {
+		return nil
+	}
 	block := ltcrpcutils.GetBlockVerboseTxByHash(pgb.LtcClient, hash)
 	return block
 }
