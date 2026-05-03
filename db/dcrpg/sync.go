@@ -328,7 +328,10 @@ func (pgb *ChainDB) syncRemainingCoinAgeBandsWithHeight(height int64) error {
 func (pgb *ChainDB) syncCoinAgeBandsTable(lastHeight int64) error {
 	maxHeight := pgb.bestBlock.height
 	batchSize := int64(50)
-	concurrency := 10
+	// Each batch issues a heavy LATERAL aggregate over utxo_history that takes
+	// 10+ minutes at chain tip. Keep concurrency low so the shared PG pool and
+	// server I/O remain responsive for HTTP handlers.
+	concurrency := 2
 
 	type heightRange struct {
 		from int64
@@ -392,7 +395,9 @@ func (pgb *ChainDB) syncCoinAgeBandsTable(lastHeight int64) error {
 func (pgb *ChainDB) syncMcaSnapshotTable(lastHeight int64) error {
 	maxHeight := pgb.bestBlock.height
 	batchSize := int64(50)
-	concurrency := 10
+	// Same reasoning as syncCoinAgeBandsTable — keep low to avoid starving
+	// HTTP handlers of DB connections and PG I/O bandwidth.
+	concurrency := 2
 
 	type heightRange struct {
 		from int64
