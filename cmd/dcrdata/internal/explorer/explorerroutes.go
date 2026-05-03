@@ -5340,13 +5340,17 @@ func (exp *ExplorerUI) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 
 	now := uint64(time.Now().Unix())
 
-	// Lock for all shared slice operations
-	exp.accessDataMu.Lock()
-	defer exp.accessDataMu.Unlock()
+	// Use the shared mutex from externalapi so api and explorer packages don't
+	// race on the same global slice.
+	externalapi.AccessDataIPRangeMu.Lock()
+	defer externalapi.AccessDataIPRangeMu.Unlock()
 
 	// remove all agent has duration >= 15s
 	remainList := make([]*externalapi.IPRangeAccessData, 0)
 	for _, ipRangeAccessData := range externalapi.AccessDataIPRanges {
+		if ipRangeAccessData == nil {
+			continue
+		}
 		duration := now - ipRangeAccessData.LastTime
 		if duration < 15 {
 			remainList = append(remainList, ipRangeAccessData)
@@ -5358,6 +5362,9 @@ func (exp *ExplorerUI) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 	var handlerAgent *externalapi.IPRangeAccessData
 	var existIndex int
 	for index, iprangeAccess := range externalapi.AccessDataIPRanges {
+		if iprangeAccess == nil {
+			continue
+		}
 		if iprangeAccess.IpRange == ipRange {
 			handlerAgent = iprangeAccess
 			existIndex = index

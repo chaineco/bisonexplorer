@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -36,7 +37,10 @@ type ReqConfig struct {
 
 const defaultHttpClientTimeout = 30 * time.Second
 
-var AccessDataIPRanges = make([]*IPRangeAccessData, 0)
+var (
+	AccessDataIPRanges  = make([]*IPRangeAccessData, 0)
+	AccessDataIPRangeMu sync.Mutex
+)
 
 // newClient configures and returns a new client
 func newClient() (c *HttpClient) {

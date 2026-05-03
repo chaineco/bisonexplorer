@@ -382,7 +382,6 @@ type ExplorerUI struct {
 	CoinCapDataList     []*dbtypes.MarketCapData
 	startSyncXMRSummary bool
 	mainHost            string
-	accessDataMu        sync.RWMutex
 }
 
 // AreDBsSyncing is a thread-safe way to fetch the boolean in dbsSyncing.

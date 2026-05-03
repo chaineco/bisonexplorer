@@ -4508,9 +4508,16 @@ func (c *appContext) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 		return true
 	}
 	now := uint64(time.Now().Unix())
+
+	externalapi.AccessDataIPRangeMu.Lock()
+	defer externalapi.AccessDataIPRangeMu.Unlock()
+
 	// remove all agent has duration >= 15s
 	remainList := make([]*externalapi.IPRangeAccessData, 0)
 	for _, ipRangeAccessData := range externalapi.AccessDataIPRanges {
+		if ipRangeAccessData == nil {
+			continue
+		}
 		// check duration with last time
 		duration := now - ipRangeAccessData.LastTime
 		if duration >= 15 {
@@ -4524,6 +4531,9 @@ func (c *appContext) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 	var handlerAgent *externalapi.IPRangeAccessData
 	var existIndex int
 	for index, iprangeAccess := range externalapi.AccessDataIPRanges {
+		if iprangeAccess == nil {
+			continue
+		}
 		if iprangeAccess.IpRange == ipRange {
 			handlerAgent = iprangeAccess
 			existIndex = index
