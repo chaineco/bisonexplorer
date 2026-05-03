@@ -2306,10 +2306,18 @@ func connectBTCNodeRPC(cfg *config) (*btcClient.Client, error) {
 func listenAndServeProto(ctx context.Context, wg *sync.WaitGroup, listen, proto string, mux http.Handler) {
 	// Try to bind web server
 	server := http.Server{
-		Addr:         listen,
-		Handler:      mux,
-		ReadTimeout:  5 * time.Second,  // slow requests should not hold connections opened
-		WriteTimeout: 60 * time.Second, // hung responses must die
+		Addr:    listen,
+		Handler: mux,
+		// ReadTimeout: full request must arrive in this time. Bumped from 5s to
+		// give slow clients / proxies enough room without blocking quickly.
+		ReadTimeout: 15 * time.Second,
+		// WriteTimeout: full response must finish in this time. Some pages
+		// (blocks list, charts, mempool) issue many DB queries / RPCs and need
+		// well over a minute under load. Must stay <= reverse-proxy's
+		// proxy_read_timeout.
+		WriteTimeout: 180 * time.Second,
+		// IdleTimeout: cap keep-alive idle time so dead clients release sockets.
+		IdleTimeout: 120 * time.Second,
 	}
 
 	// Add the graceful shutdown to the waitgroup.

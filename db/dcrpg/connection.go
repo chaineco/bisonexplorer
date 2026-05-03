@@ -8,8 +8,19 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	_ "github.com/lib/pq" // Start the PostgreSQL driver
+)
+
+// Default connection pool limits. These are kept well below typical PostgreSQL
+// max_connections (200) so that bursts of concurrent handlers cannot exhaust
+// the server and trigger "pq: sorry, too many clients already".
+const (
+	defaultMaxOpenConns    = 80
+	defaultMaxIdleConns    = 20
+	defaultConnMaxLifetime = 30 * time.Minute
+	defaultConnMaxIdleTime = 10 * time.Minute
 )
 
 // Connect opens a connection to a PostgreSQL database. The caller is
@@ -36,6 +47,11 @@ func Connect(host, port, user, pass, dbname string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	db.SetMaxOpenConns(defaultMaxOpenConns)
+	db.SetMaxIdleConns(defaultMaxIdleConns)
+	db.SetConnMaxLifetime(defaultConnMaxLifetime)
+	db.SetConnMaxIdleTime(defaultConnMaxIdleTime)
 
 	return db, db.Ping()
 }
