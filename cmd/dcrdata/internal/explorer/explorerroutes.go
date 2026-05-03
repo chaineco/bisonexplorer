@@ -849,6 +849,10 @@ func (exp *ExplorerUI) MultichainVisualBlocks(w http.ResponseWriter, r *http.Req
 	if chainType == "" {
 		return
 	}
+	if exp.ChainDisabledMap[chainType] {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s explorer is temporarily disabled", chainType), "", ExpStatusNotFound)
+		return
+	}
 	height, err := exp.dataSource.GetMutilchainHeight(chainType)
 	if err != nil {
 		log.Errorf("GetHeight failed: %v", err)
@@ -858,6 +862,10 @@ func (exp *ExplorerUI) MultichainVisualBlocks(w http.ResponseWriter, r *http.Req
 	blocks := exp.dataSource.GetMutilchainExplorerFullBlocks(chainType, int(height)-MultichainHomepageBlocksMaxCount, int(height))
 	// Safely retrieve the inventory pointer, which can be reset in StoreMPData.
 	mempoolInfo := exp.MutilchainMempoolInfo(chainType)
+	if mempoolInfo == nil {
+		exp.StatusPage(w, defaultErrorCode, fmt.Sprintf("%s mempool is not ready", chainType), "", ExpStatusNotFound)
+		return
+	}
 	if chainType == mutilchain.TYPEXMR {
 		if exp.XmrPageData.HomeInfo != nil {
 			mempoolInfo.BlockReward = exp.XmrPageData.HomeInfo.BlockReward
