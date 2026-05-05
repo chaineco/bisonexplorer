@@ -798,9 +798,6 @@ func (c *appContext) getMultichainTxSwapsInfo(w http.ResponseWriter, r *http.Req
 }
 
 func (c *appContext) getMultichainDecodedTx(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	chainType, txid := m.GetMultichainTxID(r)
 	if chainType == "" || txid == "" {
 		http.Error(w, http.StatusText(422), 422)
@@ -2579,9 +2576,6 @@ func (c *appContext) getTransactionOutputs(w http.ResponseWriter, r *http.Reques
 
 // getMultichainTransactionInputs serves []MultichainTxOut
 func (c *appContext) getMultichainTransactionInputs(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	chainType, txid := m.GetMultichainTxID(r)
 	if chainType == "" || txid == "" {
 		http.Error(w, http.StatusText(422), 422)
@@ -2608,9 +2602,6 @@ func (c *appContext) getMultichainTransactionInputs(w http.ResponseWriter, r *ht
 
 // getMultichainTransactionInput serves []MultichainTxIn
 func (c *appContext) getMultichainTransactionInput(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	chainType, txid := m.GetMultichainTxID(r)
 	if chainType == "" || txid == "" {
 		http.Error(w, http.StatusText(422), 422)
@@ -2649,9 +2640,6 @@ func (c *appContext) getMultichainTransactionInput(w http.ResponseWriter, r *htt
 
 // getMultichainTransactionOutputs serves []MultichainTxOut
 func (c *appContext) getMultichainTransactionOutputs(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	chainType, txid := m.GetMultichainTxID(r)
 	if chainType == "" || txid == "" {
 		http.Error(w, http.StatusText(422), 422)
@@ -2676,9 +2664,6 @@ func (c *appContext) getMultichainTransactionOutputs(w http.ResponseWriter, r *h
 
 // getMultichainTransactionOutput serves MultichainTxOut
 func (c *appContext) getMultichainTransactionOutput(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	chainType, txid := m.GetMultichainTxID(r)
 	if chainType == "" || txid == "" {
 		http.Error(w, http.StatusText(422), 422)
@@ -3269,9 +3254,6 @@ func (c *appContext) getStakeDiffRange(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *appContext) addressTotals(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	addresses, err := m.GetAddressCtx(r, c.Params)
 	if err != nil || len(addresses) > 1 {
 		http.Error(w, http.StatusText(422), 422)
@@ -3295,9 +3277,6 @@ func (c *appContext) addressTotals(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *appContext) multichainAddressTotals(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	chainType, address := m.GetMultichainAddressCtx(r)
 	if chainType == "" || address == "" {
 		http.Error(w, http.StatusText(422), 422)
@@ -3330,9 +3309,6 @@ func (c *appContext) multichainAddressTotals(w http.ResponseWriter, r *http.Requ
 // hexadecimal string into a list of bools. A maximum of 64 addresses can be
 // provided. Duplicates are not filtered.
 func (c *appContext) addressExists(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	addresses, err := m.GetAddressRawCtx(r, c.Params)
 	if err != nil {
 		apiLog.Errorf("addressExists rejecting request: %v", err)
@@ -3368,6 +3344,7 @@ func (c *appContext) addressIoCsvCR(w http.ResponseWriter, r *http.Request) {
 // Handler for address activity CSV file download.
 // /download/address/io/{address}[/win]
 func (c *appContext) addressIoCsv(crlf bool, w http.ResponseWriter, r *http.Request) {
+	// CSV download endpoint — keep crawler check to discourage bulk scraping.
 	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
 		return
 	}
@@ -3788,9 +3765,6 @@ func (c *appContext) getMoneroNetworkInfo(w http.ResponseWriter, r *http.Request
 }
 
 func (c *appContext) getMoneroBlockSummary(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	blockhash, _ := m.GetBlockHashStrCtx(r)
 	if blockhash == "" {
 		// get block idx
@@ -3812,9 +3786,6 @@ func (c *appContext) getMoneroBlockSummary(w http.ResponseWriter, r *http.Reques
 }
 
 func (c *appContext) getMoneroTransactionRaw(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	txhash, err := m.GetTxhashStrCtx(r)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -3830,9 +3801,6 @@ func (c *appContext) getMoneroTransactionRaw(w http.ResponseWriter, r *http.Requ
 }
 
 func (c *appContext) getMoneroTransactionDetail(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	txhash, err := m.GetTxhashStrCtx(r)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -4069,9 +4037,6 @@ func (c *appContext) getDepthChart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *appContext) getAddressTransactions(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	addresses, err := m.GetAddressCtx(r, c.Params)
 	if err != nil || len(addresses) > 1 {
 		http.Error(w, http.StatusText(422), 422)
@@ -4105,9 +4070,6 @@ func (c *appContext) getAddressTransactions(w http.ResponseWriter, r *http.Reque
 }
 
 func (c *appContext) getMultichainDBAddressTransactions(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	chainType, address := m.GetMultichainAddressCtx(r)
 	if chainType == "" || address == "" {
 		http.Error(w, http.StatusText(422), 422)
@@ -4147,9 +4109,6 @@ func (c *appContext) getMultichainDBAddressTransactions(w http.ResponseWriter, r
 }
 
 func (c *appContext) getMutilchainAddressTransactions(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgent(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	addresses, err := m.GetAddressCtx(r, c.Params)
 	if err != nil || len(addresses) > 1 {
 		http.Error(w, http.StatusText(422), 422)
@@ -4188,9 +4147,6 @@ func (c *appContext) getMutilchainAddressTransactions(w http.ResponseWriter, r *
 // getAddressTransactionsRaw handles the various /address/{addr}/.../raw API
 // endpoints.
 func (c *appContext) getAddressesTxs(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	addresses := chi.URLParam(r, "addresses")
 	if addresses == "" {
 		http.Error(w, http.StatusText(422), 422)
@@ -4234,9 +4190,6 @@ func (c *appContext) broadcastTx(w http.ResponseWriter, r *http.Request) {
 // getAddressTransactionsRaw handles the various /address/{addr}/.../raw API
 // endpoints.
 func (c *appContext) getAddressTransactionsRaw(w http.ResponseWriter, r *http.Request) {
-	if c.IsCrawlerUserAgentAdvance(r.UserAgent(), externalapi.GetIP(r)) {
-		return
-	}
 	addresses, err := m.GetAddressCtx(r, c.Params)
 	if err != nil || len(addresses) > 1 {
 		http.Error(w, http.StatusText(422), 422)
