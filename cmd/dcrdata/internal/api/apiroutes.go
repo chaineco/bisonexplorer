@@ -788,12 +788,12 @@ func (c *appContext) getMultichainTxSwapsInfo(w http.ResponseWriter, r *http.Req
 		return
 	}
 	swapsInfo, err := c.DataSource.GetMultichainSwapInfoData(txid, chainType)
-	swapsInfo.TxID = txid
-	if err != nil {
+	if err != nil || swapsInfo == nil {
 		apiLog.Errorf("getMultichainTxSwapsInfo get swapsInfo failed: Type: %s, txid: %s", chainType, txid)
 		http.Error(w, http.StatusText(422), 422)
 		return
 	}
+	swapsInfo.TxID = txid
 	writeJSON(w, swapsInfo, m.GetIndentCtx(r))
 }
 
