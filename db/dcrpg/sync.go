@@ -762,7 +762,11 @@ func (pgb *ChainDB) SyncAddressSummary() error {
 
 	//check synchronized month
 	var summaryRows = make([]*dbtypes.AddressSummaryRow, 0)
-	sumRows, _ := pgb.db.QueryContext(pgb.ctx, internal.SelectAddressSummaryRows)
+	sumRows, err := pgb.db.QueryContext(pgb.ctx, internal.SelectAddressSummaryRows)
+	if err != nil {
+		pgb.AddressSummarySyncing = false
+		return err
+	}
 	for sumRows.Next() {
 		var addrSum dbtypes.AddressSummaryRow
 		err := sumRows.Scan(&addrSum.Id, &addrSum.Time, &addrSum.SpentValue, &addrSum.ReceivedValue, &addrSum.MonthDebitRowIndex, &addrSum.MonthCreditRowIndex, &addrSum.Saved)
@@ -770,6 +774,7 @@ func (pgb *ChainDB) SyncAddressSummary() error {
 			summaryRows = append(summaryRows, &addrSum)
 		}
 	}
+	sumRows.Close()
 
 	projectFundAddress, addErr := dbtypes.DevSubsidyAddress(pgb.chainParams)
 	if addErr != nil {
@@ -782,8 +787,13 @@ func (pgb *ChainDB) SyncAddressSummary() error {
 	}
 
 	//get firt address item to get next time
-	frows, _ := pgb.db.QueryContext(pgb.ctx, internal.SelectAddressCreditsLimitNByAddressFromOldest, projectFundAddress, 1, 0)
+	frows, err := pgb.db.QueryContext(pgb.ctx, internal.SelectAddressCreditsLimitNByAddressFromOldest, projectFundAddress, 1, 0)
+	if err != nil {
+		pgb.AddressSummarySyncing = false
+		return err
+	}
 	firstRows := pgb.ConvertToAddressObj(frows)
+	frows.Close()
 	if len(firstRows) < 1 {
 		pgb.AddressSummarySyncing = false
 		return nil
@@ -899,7 +909,11 @@ func (pgb *ChainDB) SyncTreasurySummary() error {
 
 	//check synchronized month
 	var summaryRows = make([]*dbtypes.AddressSummaryRow, 0)
-	sumRows, _ := pgb.db.QueryContext(pgb.ctx, internal.SelectTreasurySummaryRows)
+	sumRows, queryErr := pgb.db.QueryContext(pgb.ctx, internal.SelectTreasurySummaryRows)
+	if queryErr != nil {
+		pgb.TreasurySummarySyncing = false
+		return queryErr
+	}
 	for sumRows.Next() {
 		var addrSum dbtypes.AddressSummaryRow
 		var rowId, spentValue, receivedValue, taddValue int64
@@ -912,6 +926,7 @@ func (pgb *ChainDB) SyncTreasurySummary() error {
 			summaryRows = append(summaryRows, &addrSum)
 		}
 	}
+	sumRows.Close()
 
 	//get firt address item to get next time
 	var startTimeDef dbtypes.TimeDef
@@ -1079,6 +1094,9 @@ func (pgb *ChainDB) ConvertToTreasuryList(rows *sql.Rows) []*dbtypes.TreasuryTx 
 
 func (pgb *ChainDB) ConvertToAddressObj(rows *sql.Rows) []*dbtypes.AddressRow {
 	addressRows := make([]*dbtypes.AddressRow, 0)
+	if rows == nil {
+		return addressRows
+	}
 	for rows.Next() {
 		var id uint64
 		var addr dbtypes.AddressRow
