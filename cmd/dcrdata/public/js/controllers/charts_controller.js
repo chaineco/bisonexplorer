@@ -859,7 +859,7 @@ export default class extends Controller {
       return node
     }
 
-    this.settings = TurboQuery.nullTemplate(['chart', 'zoom', 'scale', 'bin', 'range', 'axis', 'visibility', 'home'])
+    this.settings = TurboQuery.nullTemplate(['chart', 'zoom', 'scale', 'bin', 'range', 'axis', 'visibility', 'home', 'mode'])
     if (!this.isHomepage) {
       this.query.update(this.settings)
     }
@@ -867,6 +867,13 @@ export default class extends Controller {
     if (this.supplyPage === 'true') {
       this.settings.chart = 'coin-supply'
     }
+    // Defaults that should be omitted from the URL when unchanged.
+    this.defaultChart = this.supplyPage === 'true' ? 'coin-supply' : 'ticket-price'
+    this.defaultScale = 'linear'
+    this.defaultBin = 'day'
+    this.defaultRange = 'all'
+    this.defaultAxis = 'time'
+    this.defaultMode = 'smooth'
     this.zoomCallback = this._zoomCallback.bind(this)
     this.drawCallback = this._drawCallback.bind(this)
     this.limits = null
@@ -1653,11 +1660,49 @@ export default class extends Controller {
     })
   }
 
+  replaceUrlSettings () {
+    if (this.isHomepage) return
+    this.query.replace(this.filteredSettings())
+  }
+
+  defaultVisibilityFor (chart) {
+    switch (chart) {
+      case 'ticket-price': return 'true-false'
+      case 'coin-supply': return 'true-true-false'
+      case 'privacy-participation': return 'true-false'
+      case 'avg-age-days':
+      case 'coin-days-destroyed':
+      case 'coin-age-bands':
+      case 'mean-coin-age':
+      case 'total-coin-days':
+        return 'true-true-true'
+      default: return null
+    }
+  }
+
+  filteredSettings () {
+    const s = Object.assign({}, this.settings)
+    if (s.chart === this.defaultChart) s.chart = null
+    if (s.scale === this.defaultScale || s.scale === '') s.scale = null
+    if (s.bin === this.defaultBin) s.bin = null
+    if (s.range === this.defaultRange || s.range === '') s.range = null
+    if (s.axis === this.defaultAxis) s.axis = null
+    if (s.mode === this.defaultMode) s.mode = null
+    if (s.visibility && s.visibility === this.defaultVisibilityFor(this.settings.chart)) s.visibility = null
+    if (s.zoom && this.chartsView) {
+      try {
+        const ex = this.chartsView.xAxisExtremes()
+        if (Zoom.mapKey(s.zoom, ex, this.isTimeAxis() ? 1 : avgBlockTime) === 'all') s.zoom = null
+      } catch (e) {}
+    }
+    return s
+  }
+
   _zoomCallback (start, end) {
     this.lastZoom = Zoom.object(start, end)
     this.settings.zoom = Zoom.encode(this.lastZoom)
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
     const ex = this.chartsView.xAxisExtremes()
     const option = Zoom.mapKey(this.settings.zoom, ex, this.isTimeAxis() ? 1 : avgBlockTime)
@@ -1766,7 +1811,7 @@ export default class extends Controller {
 
     this.settings.scale = option
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
   }
 
@@ -1781,7 +1826,7 @@ export default class extends Controller {
     }
     this.settings.mode = option
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
   }
 
@@ -1864,7 +1909,7 @@ export default class extends Controller {
     }
     this.settings.visibility = this.visibility.join('-')
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
   }
 
@@ -1901,7 +1946,7 @@ export default class extends Controller {
     this.chartsView.updateOptions({ visibility: this.getVisibilityForCharts(selectChart, this.visibility) })
     this.settings.visibility = this.visibility.join('-')
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
   }
 

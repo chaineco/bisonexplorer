@@ -1219,10 +1219,15 @@ export default class extends Controller {
       return node
     }
 
-    this.settings = TurboQuery.nullTemplate(['chart', 'zoom', 'scale', 'bin', 'axis', 'visibility', 'home', 'range'])
+    this.settings = TurboQuery.nullTemplate(['chart', 'zoom', 'scale', 'bin', 'axis', 'visibility', 'home', 'range', 'mode'])
     if (!this.isHomepage) {
       this.query.update(this.settings)
     }
+    this.defaultScale = 'linear'
+    this.defaultBin = 'day'
+    this.defaultRange = 'after'
+    this.defaultAxis = 'time'
+    this.defaultMode = 'smooth'
     this.binButtons = this.binSelectorTarget.querySelectorAll('button')
     this.scaleButtons = this.scaleSelectorTarget.querySelectorAll('button')
     this.modeButtons = this.modeSelectorTarget.querySelectorAll('button')
@@ -1303,6 +1308,7 @@ export default class extends Controller {
       _this.toggleSelection('.chain-chart-selection-area')
     })
     this.settings.chart = this.settings.chart || (this.chainType === 'dcr' ? 'ticket-price' : 'block-size')
+    this.defaultChart = this.chainType === 'dcr' ? 'ticket-price' : 'block-size'
     this.chartSelectTarget.innerHTML = this.chainType === 'dcr' ? this.getDecredChartOptsHtml() : this.getMutilchainChartOptsHtml()
     this.chartSelectTarget.value = this.settings.chart
     this.handlerChainChartHeaderLink()
@@ -1384,7 +1390,7 @@ export default class extends Controller {
     this.chartsView.updateOptions({ visibility: this.getVisibilityForCharts(this.chartSelectTarget.value, this.visibility) })
     this.settings.visibility = this.visibility.join('-')
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
   }
 
@@ -2593,11 +2599,45 @@ export default class extends Controller {
     return option === 'all' || option === 'year' || option === 'month' || option === 'week' || option === 'day'
   }
 
+  defaultVisibilityFor (chart) {
+    switch (chart) {
+      case 'ticket-price': return 'true-false'
+      case 'coin-supply': return 'true-true-false'
+      case 'privacy-participation': return 'true-false'
+      case 'avg-age-days':
+      case 'coin-days-destroyed':
+      case 'coin-age-bands':
+      case 'mean-coin-age':
+      case 'total-coin-days':
+        return 'true-true-true'
+      default: return null
+    }
+  }
+
+  filteredSettings () {
+    const s = Object.assign({}, this.settings)
+    if (s.chart === this.defaultChart) s.chart = null
+    if (s.scale === this.defaultScale || s.scale === '') s.scale = null
+    if (s.bin === this.defaultBin) s.bin = null
+    if (s.range === this.defaultRange || s.range === '') s.range = null
+    if (s.axis === this.defaultAxis) s.axis = null
+    if (s.mode === this.defaultMode) s.mode = null
+    if (s.visibility && s.visibility === this.defaultVisibilityFor(this.settings.chart)) s.visibility = null
+    if (s.zoom && this.chartsView) {
+      try {
+        const ex = this.chartsView.xAxisExtremes()
+        const isTime = this.settings.axis !== 'height'
+        if (Zoom.mapKey(s.zoom, ex, isTime ? 1 : avgBlockTime) === 'all') s.zoom = null
+      } catch (e) {}
+    }
+    return s
+  }
+
   _zoomCallback (start, end) {
     this.lastZoom = Zoom.object(start, end)
     this.settings.zoom = Zoom.encode(this.lastZoom)
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
     const ex = this.chartsView.xAxisExtremes()
     const option = Zoom.mapKey(this.settings.zoom, ex, this.isTimeAxis() ? 1 : avgBlockTime)
@@ -2706,7 +2746,7 @@ export default class extends Controller {
     }
     this.settings.scale = option
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
   }
 
@@ -2728,7 +2768,7 @@ export default class extends Controller {
     }
     this.settings.mode = option
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
   }
 
@@ -2778,7 +2818,7 @@ export default class extends Controller {
     }
     this.settings.visibility = this.visibility.join('-')
     if (!this.isHomepage) {
-      this.query.replace(this.settings)
+      this.query.replace(this.filteredSettings())
     }
   }
 

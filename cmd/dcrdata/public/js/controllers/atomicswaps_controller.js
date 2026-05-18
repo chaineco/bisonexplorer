@@ -135,6 +135,15 @@ export default class extends Controller {
     // These two are templates for query parameter sets.
     // When url query parameters are set, these will also be updated.
     ctrl.settings = TurboQuery.nullTemplate(['chart', 'zoom', 'bin', 'flow', 'n', 'start', 'pair', 'status', 'search', 'mode'])
+    // Capture template defaults so we can omit them from the URL.
+    ctrl.defaultChart = ctrl.optionsTarget.value
+    const defaultBinBtn = ctrl.intervalTarget.getElementsByClassName('btn-selected')[0]
+    ctrl.defaultBin = defaultBinBtn ? defaultBinBtn.name : null
+    let defaultFlow = 0
+    ctrl.flowTarget.querySelectorAll('input').forEach((box) => {
+      if (box.checked) defaultFlow += parseInt(box.value)
+    })
+    ctrl.defaultFlow = defaultFlow
     // Get initial view settings from the url
     ctrl.query.update(ctrl.settings)
     ctrl.state = Object.assign({}, ctrl.settings)
@@ -197,6 +206,25 @@ export default class extends Controller {
     globalEventBus.on('BTC_BLOCK_RECEIVED', this.processBtcBlock)
     this.processLtcBlock = this._processLtcBlock.bind(this)
     globalEventBus.on('LTC_BLOCK_RECEIVED', this.processLtcBlock)
+  }
+
+  filteredSettings () {
+    const s = Object.assign({}, this.settings)
+    if (s.chart === this.defaultChart) s.chart = null
+    if (s.bin === this.defaultBin) s.bin = null
+    if (s.pair === 'all') s.pair = null
+    if (s.status === 'all') s.status = null
+    if (s.mode === 'full') s.mode = null
+    if (s.start === 0 || s.start === '0' || s.start === '') s.start = null
+    if (s.n === 20 || s.n === '20') s.n = null
+    if (s.flow != null && parseInt(s.flow) === this.defaultFlow) s.flow = null
+    if (s.search === '') s.search = null
+    if (s.zoom && this.graph) {
+      try {
+        if (Zoom.mapKey(s.zoom, this.graph.xAxisExtremes()) === 'all') s.zoom = null
+      } catch (e) {}
+    }
+    return s
   }
 
   disconnect () {
@@ -601,7 +629,7 @@ export default class extends Controller {
   changeViewMode () {
     ctrl.settings.mode = ctrl.settings.mode === 'full' ? 'simple' : 'full'
     document.getElementById('viewListToggle').checked = ctrl.settings.mode === 'full'
-    ctrl.query.replace(ctrl.settings)
+    ctrl.query.replace(ctrl.filteredSettings())
     ctrl.tableTarget.innerHTML = ctrl.settings.mode === 'full' ? this.createGridDataView() : this.createDataTableView()
   }
 
@@ -741,7 +769,7 @@ export default class extends Controller {
     })
     ctrl.settings.zoom = Zoom.encode(start, end)
     ctrl.lastEnd = end
-    ctrl.query.replace(ctrl.settings)
+    ctrl.query.replace(ctrl.filteredSettings())
     ctrl.chartLoaderTarget.classList.remove('loading')
   }
 
@@ -789,7 +817,7 @@ export default class extends Controller {
   }
 
   setGraphQuery () {
-    this.query.replace(this.settings)
+    this.query.replace(this.filteredSettings())
   }
 
   createGraph (processedData, otherOptions) {
@@ -876,7 +904,7 @@ export default class extends Controller {
       button.classList.remove('btn-selected')
     })
     ctrl.settings.zoom = Zoom.encode(start, end)
-    ctrl.query.replace(ctrl.settings)
+    ctrl.query.replace(ctrl.filteredSettings())
     ctrl.setSelectedZoom(Zoom.mapKey(ctrl.settings.zoom, ctrl.graph.xAxisExtremes()))
   }
 
@@ -887,7 +915,7 @@ export default class extends Controller {
     if (end === this.lastEnd) return // Only handle slide event.
     this.lastEnd = end
     ctrl.settings.zoom = Zoom.encode(start, end)
-    ctrl.query.replace(ctrl.settings)
+    ctrl.query.replace(ctrl.filteredSettings())
     ctrl.setSelectedZoom(Zoom.mapKey(ctrl.settings.zoom, ctrl.graph.xAxisExtremes()))
   }
 
@@ -971,7 +999,7 @@ export default class extends Controller {
     settings.n = requestCount
     settings.start = offset
     ctrl.paginationParams.count = tableResponse.tx_count
-    ctrl.query.replace(settings)
+    ctrl.query.replace(ctrl.filteredSettings())
     ctrl.paginationParams.offset = offset
     ctrl.paginationParams.pagesize = requestCount
     ctrl.paginationParams.currentcount = Number(tableResponse.current_count)
@@ -1018,7 +1046,7 @@ export default class extends Controller {
     this.pageSizeOptions = this.hasPagesizeTarget ? this.pagesizeTarget.querySelectorAll('option') : []
     const settings = ctrl.settings
     settings.n = this.pageSize
-    ctrl.query.replace(settings)
+    ctrl.query.replace(ctrl.filteredSettings())
   }
 
   setPageability () {

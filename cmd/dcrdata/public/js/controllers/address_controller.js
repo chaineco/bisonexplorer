@@ -182,6 +182,11 @@ export default class extends Controller {
       'n', 'start', 'txntype', 'time'])
 
     ctrl.state = Object.assign({}, settings)
+
+    // Capture template defaults so we can omit them from the URL.
+    ctrl.defaultChart = ctrl.optionsTarget.value
+    const defaultBinBtn = ctrl.intervalTarget.getElementsByClassName('btn-selected')[0]
+    ctrl.defaultBin = defaultBinBtn ? defaultBinBtn.name : null
     // Parse stimulus data
     const cdata = ctrl.data
     ctrl.dcrAddress = cdata.get('dcraddress')
@@ -653,7 +658,19 @@ export default class extends Controller {
   }
 
   setGraphQuery () {
-    this.query.replace(this.settings)
+    this.query.replace(this.filteredSettings())
+  }
+
+  filteredSettings () {
+    const s = Object.assign({}, this.settings)
+    if (s.chart === this.defaultChart) s.chart = null
+    if (s.bin === this.defaultBin) s.bin = null
+    if (s.zoom && this.graph) {
+      try {
+        if (Zoom.mapKey(s.zoom, this.graph.xAxisExtremes()) === 'all') s.zoom = null
+      } catch (e) {}
+    }
+    return s
   }
 
   updateFlow () {
@@ -707,7 +724,7 @@ export default class extends Controller {
     })
     ctrl.settings.zoom = Zoom.encode(start, end)
     ctrl.lastEnd = end
-    ctrl.query.replace(ctrl.settings)
+    ctrl.query.replace(ctrl.filteredSettings())
     ctrl.chartLoaderTarget.classList.remove('loading')
   }
 
@@ -762,7 +779,7 @@ export default class extends Controller {
     if (end === this.lastEnd) return // Only handle slide event.
     this.lastEnd = end
     ctrl.settings.zoom = Zoom.encode(start, end)
-    ctrl.query.replace(ctrl.settings)
+    ctrl.query.replace(ctrl.filteredSettings())
     ctrl.setSelectedZoom(Zoom.mapKey(ctrl.settings.zoom, ctrl.graph.xAxisExtremes()))
   }
 
@@ -771,7 +788,7 @@ export default class extends Controller {
       button.classList.remove('btn-selected')
     })
     ctrl.settings.zoom = Zoom.encode(start, end)
-    ctrl.query.replace(ctrl.settings)
+    ctrl.query.replace(ctrl.filteredSettings())
     ctrl.setSelectedZoom(Zoom.mapKey(ctrl.settings.zoom, ctrl.graph.xAxisExtremes()))
   }
 

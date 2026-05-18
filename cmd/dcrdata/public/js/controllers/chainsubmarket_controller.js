@@ -893,6 +893,16 @@ export default class extends Controller {
     return activeExchanges
   }
 
+  filteredSettings () {
+    const s = Object.assign({}, settings)
+    if (s.chart === history) s.chart = null
+    if (s.dchart === depth) s.dchart = null
+    if (s.bin === anHour) s.bin = null
+    if (s.xc === aggregatedKey) s.xc = null
+    if (s.xcs && s.xcs === settings.xc) s.xcs = null
+    return s
+  }
+
   disconnect () {
     responseCache = {}
     window.removeEventListener('resize', this.resize)
@@ -1220,7 +1230,7 @@ export default class extends Controller {
     } else {
       this.graph.updateOptions(this.processors[chart](response))
     }
-    this.query.replace(settings)
+    this.query.replace(this.filteredSettings())
     if (isRefresh) this.graph.updateOptions({ dateWindow: oldZoom })
     else this.resetZoom()
     this.removeLoader(true, depthChartLoaded)
@@ -1287,7 +1297,7 @@ export default class extends Controller {
     }
     this.depthGraph.updateOptions(chartResetOpts, true)
     this.depthGraph.updateOptions(this.processors[chart](response))
-    this.query.replace(settings)
+    this.query.replace(this.filteredSettings())
     if (isRefresh) this.depthGraph.updateOptions({ dateWindow: oldZoom })
     else this.resetDepthZoom()
     this.removeLoader(chartLoaded, true)
