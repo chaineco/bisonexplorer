@@ -1331,11 +1331,17 @@ export default class extends Controller {
     return null
   }
 
+  chartDefaultBin (chart) {
+    if (isBinDisabled(chart)) return 'day'
+    if (usesWindowUnits(chart) && !usesHybridUnits(chart)) return 'window'
+    return this.defaultBin
+  }
+
   filteredSettings () {
     const s = Object.assign({}, this.settings)
     if (s.chart === this.defaultChart) s.chart = null
     if (s.scale === this.defaultScale || s.scale === '') s.scale = null
-    if (s.bin === this.defaultBin) s.bin = null
+    if (s.bin === this.chartDefaultBin(this.settings.chart)) s.bin = null
     if (s.axis === this.defaultAxis) s.axis = null
     if (s.mode === this.defaultMode) s.mode = null
     if (s.visibility && s.visibility === this.defaultVisibilityFor(this.settings.chart)) s.visibility = null

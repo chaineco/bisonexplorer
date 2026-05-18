@@ -802,6 +802,20 @@ export default class extends Controller {
     aggRow.volume.textContent = humanize.threeSigFigs(isBtcPair ? this.dcrBtcVolume : this.dcrUsdtVolume)
   }
 
+  computeDefaultXcs () {
+    if (settings.xc !== aggregatedKey) return settings.xc
+    if (!this.exchangesButtons) return null
+    const xcsList = []
+    const isBTCPair = settings.pair === 'btc'
+    this.exchangesButtons.forEach(exchangeBtn => {
+      if (exchangeBtn.name !== 'aggregated' &&
+          ((isBTCPair && useBTCPair(exchangeBtn.name)) || (!isBTCPair && useUSDPair(exchangeBtn.name)))) {
+        xcsList.push(exchangeBtn.name)
+      }
+    })
+    return xcsList.join(',')
+  }
+
   filteredSettings () {
     const s = Object.assign({}, settings)
     if (s.chart === history) s.chart = null
@@ -809,7 +823,7 @@ export default class extends Controller {
     if (s.pair === 'usdt') s.pair = null
     if (s.bin === anHour) s.bin = null
     if (s.xc === aggregatedKey) s.xc = null
-    if (s.xcs && s.xcs === settings.xc) s.xcs = null
+    if (s.xcs && s.xcs === this.computeDefaultXcs()) s.xcs = null
     return s
   }
 
