@@ -46,9 +46,19 @@ func NewXMRClientWithTimeout(endpoint string, perRequestTimeout time.Duration) *
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:          256,
-		MaxIdleConnsPerHost:   64,
-		IdleConnTimeout:       240 * time.Second,
+		MaxIdleConns:          64,
+		// Keep idle (kept-alive) connections to monerod low: each open socket
+		// occupies an RPC slot on the node even when idle.
+		MaxIdleConnsPerHost:   8,
+		// Bound the TOTAL simultaneous connections to monerod. Without this
+		// (Go's default is unlimited), the explorer's per-block/per-tx fan-out
+		// of get_outs/get_transactions opens hundreds of sockets at once and
+		// saturates monerod's RPC server, which refuses/resets new connections
+		// (observed: node rejecting at ~26 conns while only 4% CPU — it is
+		// connection/slot bound, not compute bound). 8 keeps headroom on the
+		// node; excess calls queue transparently on the client pool.
+		MaxConnsPerHost:       8,
+		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		ResponseHeaderTimeout: 120 * time.Second,

@@ -37,6 +37,18 @@ type ReqConfig struct {
 
 const defaultHttpClientTimeout = 30 * time.Second
 
+const (
+	// CrawlerBurstWindowSecs is the sliding window (seconds) over which requests
+	// from a single client IP are counted for crawler/abuse detection.
+	CrawlerBurstWindowSecs = 15
+	// CrawlerBurstThreshold is the number of requests within the window that
+	// flags a client as an abusive crawler. Kept comfortably above normal human
+	// browsing (which, with link prefetching, can fire well over a dozen page
+	// requests in a few seconds) to avoid false positives now that tracking is
+	// per-IP rather than per-/16.
+	CrawlerBurstThreshold = 60
+)
+
 var (
 	AccessDataIPRanges  = make([]*IPRangeAccessData, 0)
 	AccessDataIPRangeMu sync.Mutex

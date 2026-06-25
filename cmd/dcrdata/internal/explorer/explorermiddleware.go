@@ -156,8 +156,8 @@ func (exp *ExplorerUI) MutilchainBlockHashPathOrIndexCtx(next http.Handler) http
 			// Not a height, try it as a hash.
 			hash = chi.URLParam(r, "blockhash")
 			blockInfo := exp.dataSource.GetMutilchainExplorerBlock(hash, chainType)
-			if blockInfo == nil {
-				log.Warnf("MutilchainBlockHeight(%s) failed", hash)
+			if blockInfo == nil || blockInfo.BlockBasic == nil {
+				log.Debugf("MutilchainBlockHeight(%s) failed", hash)
 				exp.StatusPage(w, defaultErrorCode, "could not find that block", hash, ExpStatusNotFound)
 				return
 			}

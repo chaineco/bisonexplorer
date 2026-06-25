@@ -4473,7 +4473,7 @@ func (c *appContext) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 		}
 		// check duration with last time
 		duration := now - ipRangeAccessData.LastTime
-		if duration >= 15 {
+		if duration >= externalapi.CrawlerBurstWindowSecs {
 			continue
 		}
 		remainList = append(remainList, ipRangeAccessData)
@@ -4508,11 +4508,11 @@ func (c *appContext) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 	handlerAgent.Duration += now - handlerAgent.LastTime
 	handlerAgent.LastTime = now
 	externalapi.AccessDataIPRanges[existIndex] = handlerAgent
-	// if access count is 8 times in about 15s, add to black list
-	if handlerAgent.GetCount >= 8 {
+	// if access count exceeds the burst threshold within the window, blacklist
+	if handlerAgent.GetCount >= externalapi.CrawlerBurstThreshold {
 		// remove from temp agents
 		externalapi.AccessDataIPRanges = append(externalapi.AccessDataIPRanges[:existIndex], externalapi.AccessDataIPRanges[existIndex+1:]...)
-		if handlerAgent.Duration < 15 {
+		if handlerAgent.Duration < externalapi.CrawlerBurstWindowSecs {
 			// add to blacklist
 			err := c.DataSource.InsertIPRangeToBlackList(ipRange, "Too many visits in a short period of time")
 			if err != nil {

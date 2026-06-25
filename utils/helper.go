@@ -333,15 +333,17 @@ func GetBlockchainName(chainType string) string {
 	}
 }
 
+// GetIPRange returns a normalized key used to group requests from the same
+// origin for crawler/rate-limit tracking. It returns the full IP address so
+// that throttling/blacklisting applies to a single client. Previously this
+// collapsed IPv4 to its first two octets (a /16), which meant blacklisting a
+// single abusive client also blocked up to ~65k unrelated users sharing that
+// range (e.g. an entire consumer ISP block), producing site-wide blank pages.
 func GetIPRange(s string) string {
 	trimmed := strings.TrimSpace(s)
 	ip := net.ParseIP(trimmed)
 	if ip == nil {
-		return s
+		return trimmed
 	}
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return s
-	}
-	return fmt.Sprintf("%d.%d", ip4[0], ip4[1])
+	return ip.String()
 }

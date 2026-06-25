@@ -3501,13 +3501,20 @@ func (pgb *ChainDB) GetContractSwapDataByGroup(groupTx, targetTokenString string
 	if err != nil {
 		return nil, err
 	}
-	// Get remaining token swap info on pair
+	// Get remaining token swap info on pair. Keep a non-nil zero value when the
+	// target lookup fails (e.g. BTC/LTC node unavailable or query error) so the
+	// template, which renders the target amount whenever TargetToken is set,
+	// never dereferences a nil Target (panic in atomicSwapsTable).
 	targetData := &dbtypes.AtomicSwapForTokenData{}
 	switch targetTokenString {
 	case mutilchain.TYPEBTC:
-		targetData, _ = pgb.GetBTCAtomicSwapTarget(groupTx)
+		if td, terr := pgb.GetBTCAtomicSwapTarget(groupTx); terr == nil && td != nil {
+			targetData = td
+		}
 	case mutilchain.TYPELTC:
-		targetData, _ = pgb.GetLTCAtomicSwapTarget(groupTx)
+		if td, terr := pgb.GetLTCAtomicSwapTarget(groupTx); terr == nil && td != nil {
+			targetData = td
+		}
 	}
 	cSwapData.Target = targetData
 	// get swap data for decred by contract list
@@ -9080,7 +9087,11 @@ func (pgb *ChainDB) GetMutilchainExplorerBlock(hash, chainType string) *exptypes
 	case mutilchain.TYPEXMR:
 		blockInfo = pgb.GetXMRExplorerBlockByHash(hash)
 	default:
-		return &exptypes.BlockInfo{}
+		// Unknown chain type (e.g. a crawler hitting /{chaintype}/block/...
+		// with a segment that is not a supported chain). Return nil so callers'
+		// nil guards treat it as "not found" instead of receiving a non-nil
+		// BlockInfo with a nil embedded BlockBasic, which panics the template.
+		return nil
 	}
 	return blockInfo
 }

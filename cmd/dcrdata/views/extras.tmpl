@@ -860,7 +860,7 @@
 			<!-- Only 1 column -->
 			<td>
 				{{$isRefund := .IsRefund}}
-				{{$hasTargetToken := (ne .TargetToken "")}}
+				{{$hasTargetToken := (and (ne .TargetToken "") .Target)}}
 				<div class="pb-1 border-2-bottom-grey">
 				<div class="d-md-flex ai-center fw-600 fs15">
 					{{if eq $.SimpleListMode false}}
@@ -1005,7 +1005,7 @@
 		<tbody class="bgc-white">
 		{{- range .SwapsList}}
 			{{$isRefund := .IsRefund}}
-			{{$hasTargetToken := (ne .TargetToken "")}}
+			{{$hasTargetToken := (and (ne .TargetToken "") .Target)}}
 			<!-- Begin first row is group info -->
 			<tr class="swap-group-header">
 				<td class="text-start" colspan="2">

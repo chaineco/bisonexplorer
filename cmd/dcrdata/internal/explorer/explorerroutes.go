@@ -1789,8 +1789,12 @@ func (exp *ExplorerUI) MutilchainBlockDetail(w http.ResponseWriter, r *http.Requ
 	hash := getBlockHashCtx(r)
 	var data *types.BlockInfo
 	data = exp.dataSource.GetMutilchainExplorerBlock(hash, chainType)
-	if data == nil {
-		log.Errorf("Unable to get block %s", hash)
+	if data == nil || data.BlockBasic == nil {
+		// A missing block here is a client-supplied hash that does not resolve
+		// (bots probing random/foreign-chain hashes, or a transient upstream
+		// node failure already logged at the data-source layer). It results in a
+		// 404, so log at debug level to avoid flooding ERR with routine misses.
+		log.Debugf("Unable to get block %s", hash)
 		exp.StatusPage(w, defaultErrorCode, "could not find that block", "",
 			ExpStatusNotFound)
 		return
@@ -1890,7 +1894,11 @@ func (exp *ExplorerUI) Block(w http.ResponseWriter, r *http.Request) {
 	hash := getBlockHashCtx(r)
 	data := exp.dataSource.GetExplorerBlock(hash)
 	if data == nil {
-		log.Errorf("Unable to get block %s", hash)
+		// A missing block here is a client-supplied hash that does not resolve
+		// (bots probing random/foreign-chain hashes, or a transient upstream
+		// node failure already logged at the data-source layer). It results in a
+		// 404, so log at debug level to avoid flooding ERR with routine misses.
+		log.Debugf("Unable to get block %s", hash)
 		exp.StatusPage(w, defaultErrorCode, "could not find that block", "",
 			ExpStatusNotFound)
 		return
@@ -5360,7 +5368,7 @@ func (exp *ExplorerUI) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 			continue
 		}
 		duration := now - ipRangeAccessData.LastTime
-		if duration < 15 {
+		if duration < externalapi.CrawlerBurstWindowSecs {
 			remainList = append(remainList, ipRangeAccessData)
 		}
 	}
@@ -5394,11 +5402,11 @@ func (exp *ExplorerUI) IsCrawlerUserAgentAdvance(userAgent, ip string) bool {
 	handlerAgent.Duration += now - handlerAgent.LastTime
 	handlerAgent.LastTime = now
 	externalapi.AccessDataIPRanges[existIndex] = handlerAgent
-	// if access count is 8 times in about 15s, add to black list
-	if handlerAgent.GetCount >= 8 {
+	// if access count exceeds the burst threshold within the window, blacklist
+	if handlerAgent.GetCount >= externalapi.CrawlerBurstThreshold {
 		// remove from temp agents
 		externalapi.AccessDataIPRanges = append(externalapi.AccessDataIPRanges[:existIndex], externalapi.AccessDataIPRanges[existIndex+1:]...)
-		if handlerAgent.Duration < 15 {
+		if handlerAgent.Duration < externalapi.CrawlerBurstWindowSecs {
 			// add to blacklist
 			err := exp.dataSource.InsertIPRangeToBlackList(ipRange, "Too many visits in a short period of time")
 			if err != nil {
