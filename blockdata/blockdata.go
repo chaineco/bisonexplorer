@@ -283,10 +283,13 @@ func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBloc
 	// bestblockhash, initialblockdownload, maxblocksize, deployments, etc.).
 	chainInfo, err := t.dcrdChainSvr.GetBlockChainInfo(ctx)
 	if err != nil {
+		// On error (e.g. context canceled during shutdown or a slow RPC),
+		// GetBlockChainInfo returns a nil result. Leave chainInfo nil and skip
+		// the tip check below so we don't dereference a nil pointer.
 		log.Warn("Unable to get blockchain info: ", err)
-	}
-	// GetBlockChainInfo is only valid for for chain tip.
-	if chainInfo.BestBlockHash != hash.String() {
+		chainInfo = nil
+	} else if chainInfo.BestBlockHash != hash.String() {
+		// GetBlockChainInfo is only valid for the chain tip.
 		chainInfo = nil
 	}
 

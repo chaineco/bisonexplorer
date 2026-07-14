@@ -6,8 +6,10 @@ package blockdata
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +18,53 @@ import (
 
 	"github.com/decred/dcrdata/v8/txhelpers"
 )
+
+const (
+	// collectMaxRetries is how many extra times block collection is retried
+	// when it fails with a transient RPC/connection error, giving the dcrd RPC
+	// client time to auto-reconnect its websocket (DisableAutoReconnect is
+	// false) so a brief node disconnect does not cause a block to be skipped.
+	collectMaxRetries = 5
+	// collectRetryBase is the base backoff between collection retries; the wait
+	// grows linearly with the attempt number.
+	collectRetryBase = 3 * time.Second
+)
+
+// isTransientRPCError reports whether err is the kind of temporary
+// connection/cancellation failure that is expected to clear once the dcrd RPC
+// websocket reconnects, and is therefore worth retrying. Permanent errors
+// (e.g. a block that genuinely does not exist) return false so we fail fast.
+func isTransientRPCError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	// Note: errors from collectOnce are wrapped with %v (not %w), so the
+	// errors.Is checks above only catch unwrapped errors; the string list below
+	// must therefore also include the context error messages.
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{
+		"request was canceled",
+		"context canceled",
+		"deadline exceeded",
+		"connection reset",
+		"connection refused",
+		"broken pipe",
+		"websocket",
+		"disconnected",
+		"eof",
+		"i/o timeout",
+		"no route to host",
+		"use of closed network connection",
+	} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
 
 // for getblock, ticketfeeinfo, estimatestakediff, etc.
 type chainMonitor struct {
@@ -38,7 +87,44 @@ func NewChainMonitor(ctx context.Context, collector *Collector, savers []BlockDa
 	}
 }
 
+// collect gathers block data, retrying on transient RPC/connection failures so
+// that a temporary dcrd disconnect (which the RPC client auto-reconnects from)
+// does not cause the block to be skipped and its data lost.
 func (p *chainMonitor) collect(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData, error) {
+	var lastErr error
+	for attempt := 0; attempt <= collectMaxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(attempt) * collectRetryBase
+			log.Warnf("blockdata collect for %v failed (attempt %d/%d): %v; "+
+				"waiting %v for RPC to reconnect, then retrying",
+				hash, attempt, collectMaxRetries, lastErr, delay)
+			select {
+			case <-p.ctx.Done():
+				return nil, nil, p.ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		msgBlock, blockData, err := p.collectOnce(hash)
+		if err == nil {
+			if attempt > 0 {
+				log.Infof("blockdata collect for %v succeeded after %d retr%s",
+					hash, attempt, map[bool]string{true: "y", false: "ies"}[attempt == 1])
+			}
+			return msgBlock, blockData, nil
+		}
+
+		lastErr = err
+		// Only retry errors that are expected to clear on reconnect. Fail fast
+		// on anything else (e.g. a block that genuinely cannot be found).
+		if !isTransientRPCError(err) {
+			return nil, nil, err
+		}
+	}
+	return nil, nil, lastErr
+}
+
+func (p *chainMonitor) collectOnce(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData, error) {
 	// getblock RPC
 	ctx, cancel := context.WithTimeout(context.TODO(), 2*time.Minute)
 	defer cancel()
