@@ -560,6 +560,17 @@ func (db *StakeDatabase) ConnectBlock(block *dcrutil.Block) error {
 	bestNodeHeight := int64(db.BestNode.Height())
 
 	if height <= bestNodeHeight {
+		// Tolerate a redundant connect of the current tip block. This happens
+		// when the notifier replays a block whose earlier processing partially
+		// failed (e.g. another handler timed out during an RPC outage) while
+		// the stake DB had already connected it.
+		if height == bestNodeHeight {
+			if _, tipHash, err := db.dbState(); err == nil && *tipHash == *block.Hash() {
+				log.Warnf("ConnectBlock: block %v (height %d) is already the "+
+					"stake DB tip; skipping.", block.Hash(), height)
+				return nil
+			}
+		}
 		return fmt.Errorf("cannot connect block height %d at height %d", height, bestNodeHeight)
 	}
 

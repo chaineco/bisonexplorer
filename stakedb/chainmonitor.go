@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/decred/dcrd/wire"
 	"github.com/decred/dcrdata/v8/txhelpers"
 )
@@ -107,17 +106,37 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 			reorgData.OldChainHeight, commonAncestorHeight)
 	}
 
-	// Disconnect blocks back to common ancestor.
-	log.Debugf("Disconnecting %d blocks", mainTip-commonAncestorHeight)
-	err := p.db.DisconnectBlocks(mainTip - commonAncestorHeight)
-	if err != nil {
-		return 0, nil, err
+	if mainTip < commonAncestorHeight {
+		// The stake DB tip never reached the common ancestor (block
+		// processing was stalled before the reorg). There is nothing to
+		// disconnect; connect main chain blocks forward to the common
+		// ancestor instead. Post-reorg, dcrd's main chain includes newChain,
+		// so hashes by height below the ancestor are valid for both chains.
+		log.Warnf("StakeDatabase tip %d is below the reorg common ancestor "+
+			"%d. Connecting %d main chain blocks to catch up.", mainTip,
+			commonAncestorHeight, commonAncestorHeight-mainTip)
+		for h := mainTip + 1; h <= commonAncestorHeight; h++ {
+			hash, err := p.db.NodeClient.GetBlockHash(context.TODO(), h)
+			if err != nil {
+				return 0, nil, fmt.Errorf("GetBlockHash(%d) failed: %w", h, err)
+			}
+			if _, err = p.db.ConnectBlockHash(hash); err != nil {
+				return 0, nil, fmt.Errorf("catch-up ConnectBlockHash(%v) at "+
+					"height %d failed: %w", hash, h, err)
+			}
+		}
+	} else {
+		// Disconnect blocks back to common ancestor.
+		log.Debugf("Disconnecting %d blocks", mainTip-commonAncestorHeight)
+		if err := p.db.DisconnectBlocks(mainTip - commonAncestorHeight); err != nil {
+			return 0, nil, err
+		}
 	}
 
 	mainTip = int64(p.db.Height())
 	if mainTip != commonAncestorHeight {
-		panic(fmt.Sprintf("disconnect blocks failed: tip height %d, expected %d",
-			mainTip, commonAncestorHeight))
+		return 0, nil, fmt.Errorf("failed to rewind stake db: tip height %d, expected %d",
+			mainTip, commonAncestorHeight)
 	}
 
 	// Connect blocks in side/new chain onto main chain.
@@ -126,13 +145,17 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 	var tipHash *chainhash.Hash
 	for i := range newChain {
 		hash := &newChain[i]
-		var block *dcrutil.Block
-		if block, err = p.db.ConnectBlockHash(hash); err != nil {
+		block, err := p.db.ConnectBlockHash(hash)
+		if err != nil {
 			mainTip = int64(p.db.Height())
-			currentBlockHdr, _ := p.db.DBTipBlockHeader()
+			currentBlockHdr, hdrErr := p.db.DBTipBlockHeader()
+			if hdrErr != nil {
+				return int32(mainTip), nil,
+					fmt.Errorf("error connecting block %v: %w", hash, err)
+			}
 			currentBlockHash := currentBlockHdr.BlockHash()
 			return int32(mainTip), &currentBlockHash,
-				fmt.Errorf("error connecting block %v", hash)
+				fmt.Errorf("error connecting block %v: %w", hash, err)
 		}
 		tipHeight = block.Height()
 		tipHash = block.Hash()
@@ -142,7 +165,8 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 
 	mainTip = int64(p.db.Height())
 	if mainTip != tipHeight {
-		panic("connected block height not db tip height")
+		return int32(mainTip), tipHash, fmt.Errorf("connected block height %d "+
+			"not db tip height %d", tipHeight, mainTip)
 	}
 
 	return int32(mainTip), tipHash, nil
@@ -166,13 +190,15 @@ func (p *ChainMonitor) ReorgHandler(reorg *txhelpers.ReorgData) error {
 	stakeDBTipHeight, stakeDBTipHash, err := p.switchToSideChain(reorg)
 	if err != nil {
 		log.Errorf("switchToSideChain failed: %v", err)
+		p.mtx.Unlock()
+		return err
 	}
 	if stakeDBTipHeight != newHeight {
 		log.Errorf("stakeDBTipHeight is %d, expected %d",
 			stakeDBTipHeight, newHeight)
 	}
-	if *stakeDBTipHash != newHash {
-		log.Errorf("stakeDBTipHash is %d, expected %d",
+	if stakeDBTipHash == nil || *stakeDBTipHash != newHash {
+		log.Errorf("stakeDBTipHash is %v, expected %v",
 			stakeDBTipHash, newHash)
 	}
 	p.mtx.Unlock()

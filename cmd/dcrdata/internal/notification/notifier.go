@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
@@ -277,25 +278,58 @@ func functionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
+// maxBlockCatchUp is the maximum number of missed blocks that processBlock
+// will fetch and replay when it detects that block notifications were dropped.
+// A handler timing out (e.g. during an RPC outage) leaves notifier.previous
+// behind the actual chain tip, and without a replay every subsequent block
+// would be discarded forever.
+const maxBlockCatchUp = 2000
+
 // processBlock calls the BlockHandler/BlockHandlerLite groups one at a time in
 // the order that they were registered.
 func (notifier *Notifier) processBlock(bh *wire.BlockHeader) {
 	hash := bh.BlockHash()
 	height := bh.Height
-	prev := notifier.previous
 
 	// Ensure that the received block (bh.hash, bh.height) connects to the
 	// previously connected block (q.prevHash, q.prevHeight).
-	if bh.PrevBlock != prev.hash {
-		log.Infof("Received block at %d (%v) does not connect to %d (%v). "+
-			"This is normal before reorganization.",
-			height, hash, prev.height, prev.hash)
-		return
+	if bh.PrevBlock != notifier.previous.hash {
+		// Either a reorganization is in progress (dcrd will send a reorg
+		// notification handled by signalReorg), or block notifications were
+		// missed and the chain moved on without us. Replay missed blocks in
+		// the latter case; otherwise wait for the reorg notification.
+		if !notifier.catchUpMissedBlocks(bh) {
+			log.Infof("Received block at %d (%v) does not connect to %d (%v). "+
+				"This is normal before reorganization.",
+				height, hash, notifier.previous.height, notifier.previous.hash)
+			return
+		}
+		if bh.PrevBlock != notifier.previous.hash {
+			log.Warnf("Block %v (height %d) still does not connect after "+
+				"catch-up. Waiting for reorg notification.", hash, height)
+			return
+		}
 	}
 
+	if !notifier.runBlockHandlers(bh) {
+		return
+	}
+	// Record this block as the best block connected by the collectionQueue.
+	notifier.SetPreviousBlock(hash, height)
+}
+
+// runBlockHandlers runs every registered block handler group on bh, one group
+// at a time. It returns false if a group fails to complete before
+// SyncHandlerDeadline or any handler returns an error, in which case the block
+// must not be recorded as processed. Recording a block whose handlers failed
+// would leave a permanent hole in the DB (the notifier would move on and the
+// block would never be stored); by returning false the missed-block catch-up
+// replays the block on the next notification until it succeeds.
+func (notifier *Notifier) runBlockHandlers(bh *wire.BlockHeader) bool {
 	start := time.Now()
 	for _, handlers := range notifier.block {
 		wg := new(sync.WaitGroup)
+		var failed atomic.Bool
 		for _, h := range handlers {
 			wg.Add(1)
 			go func(h BlockHandler) {
@@ -307,6 +341,7 @@ func (notifier *Notifier) processBlock(bh *wire.BlockHeader) {
 				}()
 				if err := h(bh); err != nil {
 					log.Errorf("block handler failed: %v", err)
+					failed.Store(true)
 					return
 				}
 			}(h)
@@ -318,14 +353,79 @@ func (notifier *Notifier) processBlock(bh *wire.BlockHeader) {
 		}()
 		select {
 		case <-done:
+			if failed.Load() {
+				log.Errorf("a block handler failed for block %v (height %d); "+
+					"the block will be replayed on the next notification",
+					bh.BlockHash(), bh.Height)
+				return false
+			}
 		case <-time.NewTimer(SyncHandlerDeadline).C:
 			log.Errorf("at least 1 block handler has not completed before the deadline")
-			return
+			return false
 		}
 	}
 	log.Infof("handlers of Notifier.processBlock() completed in %v", time.Since(start))
-	// Record this block as the best block connected by the collectionQueue.
-	notifier.SetPreviousBlock(hash, height)
+	return true
+}
+
+// catchUpMissedBlocks determines whether the gap between the last processed
+// block and bh is a stretch of missed main chain blocks (as opposed to a
+// pending reorganization), and if so fetches and replays them through the
+// block handlers. It returns true when bh's parent chain has been fully
+// processed and bh itself may now be handled. Partial progress is recorded, so
+// a failed catch-up resumes on the next block notification.
+func (notifier *Notifier) catchUpMissedBlocks(bh *wire.BlockHeader) bool {
+	prev := notifier.previous
+	if prev.hash == (chainhash.Hash{}) || bh.Height <= prev.height+1 {
+		return false
+	}
+	gap := int64(bh.Height) - int64(prev.height) - 1
+	if gap > maxBlockCatchUp {
+		log.Errorf("Missed %d block notifications (best processed block %d, "+
+			"received %d). Too many to replay automatically — restart dcrdata "+
+			"to resync.", gap, prev.height, bh.Height)
+		return false
+	}
+
+	// Only catch up if the last processed block is still on the main chain.
+	// If it is not, this is a chain reorganization, and dcrd's reorg
+	// notification (signalReorg) will handle it.
+	ctx := context.Background()
+	mainHash, err := notifier.node.GetBlockHash(ctx, int64(prev.height))
+	if err != nil {
+		log.Warnf("catchUpMissedBlocks: GetBlockHash(%d) failed: %v",
+			prev.height, err)
+		return false
+	}
+	if *mainHash != prev.hash {
+		return false // reorged out; wait for the reorg notification
+	}
+
+	log.Warnf("Detected %d missed block notifications (heights %d-%d). "+
+		"Catching up...", gap, prev.height+1, bh.Height-1)
+	for h := int64(prev.height) + 1; h < int64(bh.Height); h++ {
+		hash, err := notifier.node.GetBlockHash(ctx, h)
+		if err != nil {
+			log.Errorf("catch-up: GetBlockHash(%d) failed: %v", h, err)
+			return false
+		}
+		msgBlock, err := notifier.node.GetBlock(ctx, hash)
+		if err != nil {
+			log.Errorf("catch-up: GetBlock(%v) failed: %v", hash, err)
+			return false
+		}
+		hdr := msgBlock.Header
+		log.Infof("Catch-up: processing missed block %v (height %d).", hash, h)
+		if !notifier.runBlockHandlers(&hdr) {
+			log.Errorf("catch-up: handlers failed for missed block at height "+
+				"%d. Progress saved; will resume on the next block notification.", h)
+			return false
+		}
+		notifier.SetPreviousBlock(hdr.BlockHash(), hdr.Height)
+	}
+	log.Infof("Catch-up complete: processed %d missed blocks through height %d.",
+		gap, bh.Height-1)
+	return true
 }
 
 // processTx calls the TxHandler groups one at a time in the order that they

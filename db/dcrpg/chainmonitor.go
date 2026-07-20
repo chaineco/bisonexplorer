@@ -57,28 +57,52 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 
 	// Flag blocks from mainRoot+1 to mainTip as is_mainchain=false
 	startTime := time.Now()
-	mainRoot := reorgData.CommonAncestor.String()
-	log.Infof("Moving %d blocks to side chain...", mainTip-commonAncestorHeight)
-	newMainRoot, numBlocksmoved := p.db.TipToSideChain(mainRoot)
-	if mainRoot != newMainRoot {
-		return 0, nil, fmt.Errorf("failed to flag blocks as side chain")
-	}
-	log.Infof("Moved %d blocks from the main chain to a side chain in %v.",
-		numBlocksmoved, time.Since(startTime))
+	if mainTip < commonAncestorHeight {
+		// The DB tip never reached the common ancestor (block processing was
+		// stalled before the reorg). There are no old-chain blocks stored to
+		// move to a side chain — and calling TipToSideChain here would walk
+		// past the ancestor flagging valid main chain blocks. Instead, store
+		// the missing main chain blocks up to the ancestor, then connect the
+		// new chain as usual.
+		log.Warnf("ChainDB tip %d is below the reorg common ancestor %d. "+
+			"Storing %d missing main chain blocks to catch up.", mainTip,
+			commonAncestorHeight, commonAncestorHeight-mainTip)
+	} else {
+		mainRoot := reorgData.CommonAncestor.String()
+		log.Infof("Moving %d blocks to side chain...", mainTip-commonAncestorHeight)
+		newMainRoot, numBlocksmoved := p.db.TipToSideChain(mainRoot)
+		if mainRoot != newMainRoot {
+			return 0, nil, fmt.Errorf("failed to flag blocks as side chain")
+		}
+		log.Infof("Moved %d blocks from the main chain to a side chain in %v.",
+			numBlocksmoved, time.Since(startTime))
 
-	// Verify the tip is now the previous common ancestor
-	mainTip = p.db.bestBlock.Height()
-	if mainTip != commonAncestorHeight {
-		panic(fmt.Sprintf("disconnect blocks failed: tip height %d, expected %d",
-			mainTip, commonAncestorHeight))
+		// Verify the tip is now the previous common ancestor
+		mainTip = p.db.bestBlock.Height()
+		if mainTip != commonAncestorHeight {
+			return 0, nil, fmt.Errorf("disconnect blocks failed: tip height %d, expected %d",
+				mainTip, commonAncestorHeight)
+		}
 	}
 
-	// Connect blocks in side chain onto main chain
-	log.Debugf("Connecting %d new main chain blocks", len(newChain))
-	currentHeight := commonAncestorHeight + 1
+	// Build the list of block hashes to connect: main chain blocks missing
+	// below the common ancestor (catch-up case only), then the new chain.
+	connectHashes := make([]chainhash.Hash, 0, len(newChain))
+	for h := mainTip + 1; h <= commonAncestorHeight; h++ {
+		hash, err := p.db.Client.GetBlockHash(context.TODO(), h)
+		if err != nil {
+			return 0, nil, fmt.Errorf("GetBlockHash(%d) failed: %w", h, err)
+		}
+		connectHashes = append(connectHashes, *hash)
+	}
+	connectHashes = append(connectHashes, newChain...)
+
+	// Connect blocks onto main chain
+	log.Debugf("Connecting %d new main chain blocks", len(connectHashes))
+	currentHeight := mainTip + 1
 	var endHash chainhash.Hash
 	var endHeight int32
-	for i := range newChain {
+	for i := range connectHashes {
 		var msgBlock *wire.MsgBlock
 		// Try to find block in stakedb cache
 		block, found := p.db.stakeDB.BlockCached(currentHeight)
@@ -86,14 +110,14 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 			msgBlock = block.MsgBlock()
 		}
 		// Fetch the block by RPC if not found or wrong hash
-		if !found || msgBlock.BlockHash() != newChain[i] {
-			log.Debugf("block %v not found in stakedb cache, fetching from dcrd", newChain[i])
+		if !found || msgBlock.BlockHash() != connectHashes[i] {
+			log.Debugf("block %v not found in stakedb cache, fetching from dcrd", connectHashes[i])
 			// Request MsgBlock from dcrd
 			var err error
-			msgBlock, err = p.db.Client.GetBlock(context.TODO(), &newChain[i])
+			msgBlock, err = p.db.Client.GetBlock(context.TODO(), &connectHashes[i])
 			if err != nil {
 				return 0, nil,
-					fmt.Errorf("unable to get side chain block %v", newChain[i])
+					fmt.Errorf("unable to get side chain block %v", connectHashes[i])
 			}
 		}
 
@@ -113,7 +137,7 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 			updateExistingRecords, updateAddressesSpendingInfo, chainWork)
 		if err != nil {
 			return int32(p.db.bestBlock.Height()), p.db.bestBlock.Hash(),
-				fmt.Errorf("error connecting block %v", newChain[i])
+				fmt.Errorf("error connecting block %v: %w", connectHashes[i], err)
 		}
 
 		endHeight = int32(msgBlock.Header.Height)
@@ -126,13 +150,13 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 		currentHeight++
 	}
 
-	log.Infof("Moved %d blocks from a side chain to the main chain in %v.",
-		numBlocksmoved, time.Since(startTime))
+	log.Infof("Connected %d blocks to the main chain in %v.",
+		len(connectHashes), time.Since(startTime))
 
 	mainTip = p.db.bestBlock.Height()
 	if mainTip != int64(endHeight) {
-		panic(fmt.Sprintf("connected block height %d not db tip height %d",
-			endHeight, mainTip))
+		return endHeight, &endHash, fmt.Errorf("connected block height %d "+
+			"not db tip height %d", endHeight, mainTip)
 	}
 
 	return endHeight, &endHash, nil
@@ -143,6 +167,7 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 // notification.ReorgHandler, and is registered as a handler in main.go.
 func (p *ChainMonitor) ReorgHandler(reorg *txhelpers.ReorgData) error {
 	p.db.InReorg = true // to avoid project fund balance computation
+	defer func() { p.db.InReorg = false }()
 	newHeight, oldHeight := reorg.NewChainHeight, reorg.OldChainHeight
 	newHash, oldHash := reorg.NewChainHead, reorg.OldChainHead
 
