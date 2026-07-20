@@ -735,16 +735,16 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 				return "Decred"
 			}
 		},
-		"toTitleCase": titler.String,
+		"toTitleCase": titleCase,
 		"xcDisplayName": func(token string) string {
 			switch token {
 			case "dcrdex":
 				return "Dcrdex"
 			}
 			if exchanges.IsDCRBTCExchange(token) {
-				return titler.String(exchanges.GetDCRBTCExchangeName(token))
+				return titleCase(exchanges.GetDCRBTCExchangeName(token))
 			}
-			return titler.String(token)
+			return titleCase(token)
 		},
 		"xcLogoName": func(token string) string {
 			if strings.HasPrefix(token, "btc_") {

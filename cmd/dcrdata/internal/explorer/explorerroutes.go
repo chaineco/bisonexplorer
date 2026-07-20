@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -54,9 +55,21 @@ import (
 )
 
 var (
+	// titlerMtx guards titler: a cases.Caser is stateful and NOT safe for
+	// concurrent use. Sharing it unguarded across request goroutines caused
+	// sporadic "slice bounds out of range" panics inside template funcs
+	// (e.g. xcDisplayName). Use titleCase() instead of titler directly.
+	titlerMtx    sync.Mutex
 	titler       = cases.Title(language.AmericanEnglish)
 	dummyRequest = new(http.Request)
 )
+
+// titleCase converts s to title case. Safe for concurrent use.
+func titleCase(s string) string {
+	titlerMtx.Lock()
+	defer titlerMtx.Unlock()
+	return titler.String(s)
+}
 
 func init() {
 	// URL should be set because commonData call a method on it.
@@ -170,7 +183,7 @@ func netName(chainParams *chaincfg.Params) string {
 	if strings.HasPrefix(strings.ToLower(chainParams.Name), "testnet") {
 		return testnetNetName
 	}
-	return titler.String(chainParams.Name)
+	return titleCase(chainParams.Name)
 }
 
 func (exp *ExplorerUI) timeoutErrorPage(w http.ResponseWriter, err error, debugStr string) (wasTimeout bool) {
@@ -376,9 +389,16 @@ func (exp *ExplorerUI) CoinCapPage(w http.ResponseWriter, r *http.Request) {
 	var commonData = exp.commonData(r)
 	commonData.IsHomepage = true
 
+	// The "new_home_navbar" template (shared with decred_home) dereferences
+	// VotesStatus, ProposalCountMap and Conversions, so they must exist in the
+	// page struct or template execution fails and the page 500s. They only
+	// feed homepage JS data attributes, so empty values are fine here.
 	str, err := exp.templates.exec("marketlist", struct {
 		*CommonPageData
-		MarketCapList []*dbtypes.MarketCapData
+		MarketCapList    []*dbtypes.MarketCapData
+		VotesStatus      string
+		ProposalCountMap string
+		Conversions      *homeConversions
 	}{
 		CommonPageData: commonData,
 		MarketCapList:  exp.CoinCapDataList,
