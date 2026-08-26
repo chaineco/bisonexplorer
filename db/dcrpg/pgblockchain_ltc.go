@@ -627,6 +627,30 @@ func makeLTCExplorerBlockBasic(data *ltcjson.GetBlockVerboseTxResult) *exptypes.
 	return block
 }
 
+// Bounds for LTC previous-transaction prefetching.
+//
+// This used to spawn one goroutine per prevout txid *before* acquiring a
+// per-call 4-slot semaphore, so a block with ~800 prevouts created ~800
+// goroutines at once and parked 796 of them on the channel send. The semaphore
+// being per-call also meant N concurrent block-page requests issued 4*N
+// concurrent RPCs rather than 4. On 2026-08-26 litecoind was stopped; every RPC
+// then hung for the full ltcrpcutils.DefaultRPCTimeout and the pile-up reached
+// 393,579 goroutines / ~15 GB RSS in about twelve minutes, taking the site down.
+//
+// Staying bounded needs both halves: a process-wide worker cap so in-flight
+// prevout RPCs cannot scale with traffic, and acquiring that cap *before*
+// spawning, so queued work costs a loop iteration instead of a goroutine stack.
+const ltcPrevTxWorkers = 8
+
+var (
+	ltcPrevTxSem = make(chan struct{}, ltcPrevTxWorkers)
+
+	// ltcPrevTxs memoizes prevouts across requests. Neighbouring blocks share
+	// most of their prevouts, so this removes the bulk of the RPC traffic a
+	// crawler walking /ltc/block/* would otherwise generate.
+	ltcPrevTxs = newRawTxCache[ltcjson.TxRawResult](20000)
+)
+
 // prefetchLTCPrevTxs concurrently fetches all unique previous transactions
 // referenced by inputs across all transactions in a block. Returns a cache
 // map of txid -> TxRawResult for fast lookup, eliminating the N+1 RPC pattern.
@@ -638,16 +662,22 @@ func prefetchLTCPrevTxs(client *ltcClient.Client, rawTxs []ltcjson.TxRawResult) 
 		cache[rawTxs[i].Txid] = &rawTxs[i]
 	}
 
-	// Collect unique prevout txids not already in the block
+	// Collect unique prevout txids not already in the block, serving whatever
+	// the process-wide cache already holds without touching the RPC client.
 	needed := make(map[string]struct{})
 	for _, tx := range rawTxs {
 		for _, vin := range tx.Vin {
 			if vin.IsCoinBase() || vin.Txid == "" {
 				continue
 			}
-			if _, ok := cache[vin.Txid]; !ok {
-				needed[vin.Txid] = struct{}{}
+			if _, ok := cache[vin.Txid]; ok {
+				continue
 			}
+			if hit := ltcPrevTxs.get(vin.Txid); hit != nil {
+				cache[vin.Txid] = hit
+				continue
+			}
+			needed[vin.Txid] = struct{}{}
 		}
 	}
 
@@ -655,20 +685,21 @@ func prefetchLTCPrevTxs(client *ltcClient.Client, rawTxs []ltcjson.TxRawResult) 
 		return cache
 	}
 
-	// Fetch concurrently with limited workers
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	// litecoind HTTP RPC processes requests sequentially; keep concurrency low.
-	sem := make(chan struct{}, 4)
 
 	for txid := range needed {
+		// Acquire before spawning, and from the shared pool: queued prevouts
+		// must not each cost a goroutine, and the ceiling has to hold across
+		// every concurrent block page rather than per call.
+		ltcPrevTxSem <- struct{}{}
 		wg.Add(1)
 		go func(tid string) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			defer func() { <-ltcPrevTxSem }()
 			txResult, err := ltcrpcutils.GetRawTransactionByTxidStr(client, tid)
 			if err == nil && txResult != nil {
+				ltcPrevTxs.put(tid, txResult)
 				mu.Lock()
 				cache[tid] = txResult
 				mu.Unlock()

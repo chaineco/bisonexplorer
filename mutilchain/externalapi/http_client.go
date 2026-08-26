@@ -54,6 +54,28 @@ var (
 	AccessDataIPRangeMu sync.Mutex
 )
 
+// sharedTransport is used by every newClient caller. It must be shared: each
+// http.Transport owns an independent connection pool, so cloning one per
+// request (as this used to) meant no connection was ever reused and each
+// clone's idle sockets lingered until they timed out. With external address
+// APIs called on nearly every multichain address page, that leaked sockets and
+// memory steadily.
+var sharedTransport = func() *http.Transport {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.MaxIdleConns = 100
+	tr.MaxIdleConnsPerHost = 8
+	tr.MaxConnsPerHost = 16
+	return tr
+}()
+
+// sharedSkipTLSTransport is the SkipTLSHttpRequest counterpart to
+// sharedTransport, shared for the same reason.
+var sharedSkipTLSTransport = func() *http.Transport {
+	tr := sharedTransport.Clone()
+	tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	return tr
+}()
+
 // newClient configures and returns a new client
 func newClient() (c *HttpClient) {
 	// Initialize context use to cancel all pending requests when shutdown request is made.
@@ -64,7 +86,7 @@ func newClient() (c *HttpClient) {
 		cancelFunc: cancel,
 		httpClient: &http.Client{
 			Timeout:   defaultHttpClientTimeout,
-			Transport: http.DefaultTransport.(*http.Transport).Clone(),
+			Transport: sharedTransport,
 		},
 	}
 }
@@ -175,11 +197,14 @@ func HttpRequest(reqConfig *ReqConfig, respObj interface{}) error {
 	if err != nil {
 		return err
 	}
+	// Deferred, not trailing: these endpoints fail often (rate limits, HTML
+	// error pages, truncated bodies), and every decode error used to return
+	// with the body still open, leaking the connection behind it.
+	defer httpResp.Body.Close()
 	dec := json.NewDecoder(httpResp.Body)
 	if err := dec.Decode(respObj); err != nil {
 		return err
 	}
-	httpResp.Body.Close()
 	return nil
 }
 
@@ -187,25 +212,22 @@ func HttpRequest(reqConfig *ReqConfig, respObj interface{}) error {
 func SkipTLSHttpRequest(reqConfig *ReqConfig, respObj interface{}) error {
 	// Initialize context use to cancel all pending requests when shutdown request is made.
 	ctx, cancel := context.WithCancel(context.Background())
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
 	client := &HttpClient{
 		context:    ctx,
 		cancelFunc: cancel,
 		httpClient: &http.Client{
 			Timeout:   defaultHttpClientTimeout,
-			Transport: tr,
+			Transport: sharedSkipTLSTransport,
 		},
 	}
 	httpResp, err := client.query(reqConfig)
 	if err != nil {
 		return err
 	}
+	defer httpResp.Body.Close()
 	dec := json.NewDecoder(httpResp.Body)
 	if err := dec.Decode(respObj); err != nil {
 		return err
 	}
-	httpResp.Body.Close()
 	return nil
 }

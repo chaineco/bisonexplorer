@@ -42,6 +42,13 @@ func GetAPIMutilchainAddressDetails(chainApiUrls, address string, chainType stri
 		if chainType == mutilchain.TYPELTC && api == BLockchainAPI {
 			continue
 		}
+		// The chainapis provider needs a base URL from the chainapiurl config
+		// option. Without it every request is built as "/ltc/addresses/..." and
+		// fails with "unsupported protocol scheme", so skip the provider rather
+		// than spend a request and an error log per address on a certain miss.
+		if api == ChainAPI && chainApiUrls == "" {
+			continue
+		}
 		//Get from API
 		addrInfo, err := GetAddressDetailsByAPIEnv(chainApiUrls, address, chainType, api, limit, offset, chainHeight)
 		if err == nil {

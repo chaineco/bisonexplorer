@@ -1149,10 +1149,18 @@ func _main(ctx context.Context) error {
 			rd.Get("/", explore.Home)
 		})
 		r.Route("/{chaintype}", func(rd chi.Router) {
+			// Block and transaction pages fan out to the LTC/BTC/XMR node RPCs,
+			// so their cost is set by an upstream this process does not control.
+			// Cap how many can be in flight per chain and shed the rest with a
+			// 503; see mw.InFlightLimiterBy for the incident this prevents. The
+			// budget is per chain so one sick daemon cannot starve the others.
+			chainRPCPages := mw.InFlightLimiterBy(32, func(r *http.Request) string {
+				return chi.URLParam(r, "chaintype")
+			})
 			rd.Get("/", explore.MutilchainHome)
 			rd.Get("/blocks", explore.MutilchainBlocks)
-			rd.With(explore.MutilchainBlockHashPathOrIndexCtx).Get("/block/{blockhash}", explore.MutilchainBlockDetail)
-			rd.With(explorer.TransactionHashCtx).Get("/tx/{txid}", explore.MutilchainTxPage)
+			rd.With(chainRPCPages, explore.MutilchainBlockHashPathOrIndexCtx).Get("/block/{blockhash}", explore.MutilchainBlockDetail)
+			rd.With(chainRPCPages, explorer.TransactionHashCtx).Get("/tx/{txid}", explore.MutilchainTxPage)
 			rd.Get("/mempool", explore.MutilchainMempool)
 			rd.Get("/charts", explore.MutilchainCharts)
 			rd.Get("/market", explore.MutilchainMarketPage)

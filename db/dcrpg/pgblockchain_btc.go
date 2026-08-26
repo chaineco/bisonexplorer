@@ -609,6 +609,17 @@ func makeBTCExplorerBlockBasic(data *btcjson.GetBlockVerboseTxResult) *exptypes.
 	return block
 }
 
+// Bounds for BTC previous-transaction prefetching. See the commentary on
+// ltcPrevTxWorkers in pgblockchain_ltc.go — this path had the identical
+// spawn-then-throttle defect, and only escaped the 2026-08-26 meltdown because
+// bitcoind stayed up while litecoind did not.
+const btcPrevTxWorkers = 8
+
+var (
+	btcPrevTxSem = make(chan struct{}, btcPrevTxWorkers)
+	btcPrevTxs   = newRawTxCache[btcjson.TxRawResult](20000)
+)
+
 // prefetchBTCPrevTxs concurrently fetches all unique previous transactions
 // referenced by inputs across all transactions in a block. Returns a cache
 // map of txid -> TxRawResult for fast lookup, eliminating the N+1 RPC pattern.
@@ -620,16 +631,22 @@ func prefetchBTCPrevTxs(client *btcClient.Client, rawTxs []btcjson.TxRawResult) 
 		cache[rawTxs[i].Txid] = &rawTxs[i]
 	}
 
-	// Collect unique prevout txids not already in the block
+	// Collect unique prevout txids not already in the block, serving whatever
+	// the process-wide cache already holds without touching the RPC client.
 	needed := make(map[string]struct{})
 	for _, tx := range rawTxs {
 		for _, vin := range tx.Vin {
 			if vin.IsCoinBase() || vin.Txid == "" {
 				continue
 			}
-			if _, ok := cache[vin.Txid]; !ok {
-				needed[vin.Txid] = struct{}{}
+			if _, ok := cache[vin.Txid]; ok {
+				continue
 			}
+			if hit := btcPrevTxs.get(vin.Txid); hit != nil {
+				cache[vin.Txid] = hit
+				continue
+			}
+			needed[vin.Txid] = struct{}{}
 		}
 	}
 
@@ -637,21 +654,20 @@ func prefetchBTCPrevTxs(client *btcClient.Client, rawTxs []btcjson.TxRawResult) 
 		return cache
 	}
 
-	// Fetch concurrently with limited workers
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	// bitcoind HTTP RPC processes requests sequentially; keep concurrency low
-	// to avoid saturating the connection and timing out.
-	sem := make(chan struct{}, 4)
 
 	for txid := range needed {
+		// Acquire before spawning, and from the shared pool. See
+		// prefetchLTCPrevTxs for why both halves matter.
+		btcPrevTxSem <- struct{}{}
 		wg.Add(1)
 		go func(tid string) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			defer func() { <-btcPrevTxSem }()
 			txResult, err := btcrpcutils.GetRawTransactionByTxidStr(client, tid)
 			if err == nil && txResult != nil {
+				btcPrevTxs.put(tid, txResult)
 				mu.Lock()
 				cache[tid] = txResult
 				mu.Unlock()

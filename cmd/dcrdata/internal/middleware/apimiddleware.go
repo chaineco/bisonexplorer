@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/chaincfg/v3"
@@ -113,6 +114,60 @@ func Tollbooth(l *Limiter) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		}
 		return http.HandlerFunc(hf)
+	}
+}
+
+// InFlightLimiter bounds how many requests may be inside the wrapped handler at
+// once, replying 503 rather than queueing when the ceiling is reached.
+//
+// Multichain pages fan out to external node RPCs, and Go's http.Server
+// WriteTimeout only closes the connection — it does not cancel the handler
+// goroutine. Without a ceiling, a slow or absent upstream therefore converts
+// arriving traffic into unbounded in-process work that outlives the clients
+// waiting on it. That is what took the site down on 2026-08-26: a crawler
+// walking /ltc/block/* while litecoind was stopped accumulated ~500 live
+// handlers and 393,579 goroutines. Shedding load is the only response that
+// keeps the process bounded when an upstream misbehaves.
+func InFlightLimiter(max int) func(http.Handler) http.Handler {
+	return InFlightLimiterBy(max, func(*http.Request) string { return "" })
+}
+
+// InFlightLimiterBy is InFlightLimiter with an independent ceiling per key.
+//
+// Keying matters when one handler serves several upstreams: with a single
+// shared ceiling, an unresponsive monerod would fill every slot and start
+// shedding Litecoin pages that were perfectly healthy — the same cross-chain
+// cascade that made the 2026-08-26 outage site-wide rather than LTC-only.
+// Budgets are allocated lazily and never removed, so key must come from a
+// bounded set (a route pattern or path parameter, never raw user input).
+func InFlightLimiterBy(max int, key func(*http.Request) string) func(http.Handler) http.Handler {
+	var mtx sync.Mutex
+	sems := make(map[string]chan struct{})
+
+	semFor := func(k string) chan struct{} {
+		mtx.Lock()
+		defer mtx.Unlock()
+		sem, ok := sems[k]
+		if !ok {
+			sem = make(chan struct{}, max)
+			sems[k] = sem
+		}
+		return sem
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sem := semFor(key(r))
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+				next.ServeHTTP(w, r)
+			default:
+				w.Header().Set("Retry-After", "5")
+				http.Error(w, "Server busy, please retry shortly.",
+					http.StatusServiceUnavailable)
+			}
+		})
 	}
 }
 
